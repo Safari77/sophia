@@ -12,61 +12,42 @@
 #include <libsr.h>
 #include <libso.h>
 #include <libsv.h>
-#include <libsl.h>
+#include <libsw.h>
 #include <libsd.h>
 #include <libsi.h>
 #include <libsx.h>
 #include <libsy.h>
+#include <libsc.h>
 #include <libse.h>
 
 static inline int
-se_txwrite(setx *t, sev *o, uint8_t flags)
+se_txwrite(setx *t, sedocument *o, uint8_t flags)
 {
 	se *e = se_of(&t->o);
 	sedb *db = se_cast(o->o.parent, sedb*, SEDB);
-	/* validate req */
-	if (ssunlikely(t->t.state == SXPREPARE)) {
-		sr_error(&e->error, "%s", "transaction is in 'prepare' state (read-only)");
-		goto error;
-	}
 
 	/* validate database status */
-	int status = se_status(&db->status);
-	switch (status) {
-	case SE_SHUTDOWN:
-		if (ssunlikely(! se_dbvisible(db, t->t.id))) {
-			sr_error(&e->error, "%s", "database is invisible for the transaction");
-			goto error;
-		}
-		break;
-	case SE_RECOVER:
-	case SE_ONLINE: break;
-	default: goto error;
-	}
-	if (flags == SVUPDATE && !sf_updatehas(&db->scheme.fmt_update))
-		flags = 0;
+	if (ssunlikely(! se_active(e)))
+		goto error;
 
-	/* prepare object */
-	svv *v;
-	int rc = se_dbv(db, o, 0, &v);
+	/* create document */
+	int rc;
+	rc = se_document_validate(o, &db->o);
 	if (ssunlikely(rc == -1))
 		goto error;
-	v->flags = flags;
-	v->log = o->log;
-	sv vp;
-	sv_init(&vp, &sv_vif, v, NULL);
-	so_destroy(&o->o);
+	rc = se_document_create(o, flags);
+	if (ssunlikely(rc == -1))
+		goto error;
 
-	/* ensure quota */
-	int size = sizeof(svv) + sv_size(&vp);
-	ss_quota(&e->quota, SS_QADD, size);
+	svv *v = o->v;
+	v->log = o->log;
+	sv_vref(v);
+	so_destroy(&o->o);
 
 	/* concurrent index only */
 	rc = sx_set(&t->t, &db->coindex, v);
-	if (ssunlikely(rc == -1)) {
-		ss_quota(&e->quota, SS_QREMOVE, size);
+	if (ssunlikely(rc == -1))
 		return -1;
-	}
 	return 0;
 error:
 	so_destroy(&o->o);
@@ -76,71 +57,102 @@ error:
 static int
 se_txset(so *o, so *v)
 {
-	setx  *t = se_cast(o, setx*, SETX);
-	sev *key = se_cast(v, sev*, SEV);
+	setx *t = se_cast(o, setx*, SETX);
+	sedocument *key = se_cast(v, sedocument*, SEDOCUMENT);
 	return se_txwrite(t, key, 0);
 }
 
 static int
-se_txupdate(so *o, so *v)
+se_txupsert(so *o, so *v)
 {
-	setx  *t = se_cast(o, setx*, SETX);
-	sev *key = se_cast(v, sev*, SEV);
-	return se_txwrite(t, key, SVUPDATE);
+	setx *t = se_cast(o, setx*, SETX);
+	sedocument *key = se_cast(v, sedocument*, SEDOCUMENT);
+	se *e = se_of(&t->o);
+	sedb *db = se_cast(v->parent, sedb*, SEDB);
+	if (! sf_upserthas(&db->scheme->upsert)) {
+		if (key->created <= 1)
+			so_destroy(v);
+		sr_error(&e->error, "%s", "upsert callback is not set");
+		return -1;
+	}
+	return se_txwrite(t, key, SVUPSERT);
 }
 
 static int
 se_txdelete(so *o, so *v)
 {
-	setx  *t = se_cast(o, setx*, SETX);
-	sev *key = se_cast(v, sev*, SEV);
+	setx *t = se_cast(o, setx*, SETX);
+	sedocument *key = se_cast(v, sedocument*, SEDOCUMENT);
 	return se_txwrite(t, key, SVDELETE);
 }
 
 static void*
 se_txget(so *o, so *v)
 {
-	setx  *t = se_cast(o, setx*, SETX);
-	sev *key = se_cast(v, sev*, SEV);
+	setx *t = se_cast(o, setx*, SETX);
+	sedocument *key = se_cast(v, sedocument*, SEDOCUMENT);
 	se *e = se_of(&t->o);
 	sedb *db = se_cast(key->o.parent, sedb*, SEDB);
+
 	/* validate database */
-	int status = se_status(&db->status);
-	switch (status) {
-	case SE_SHUTDOWN:
-		if (ssunlikely(! se_dbvisible(db, t->t.id))) {
-			sr_error(&e->error, "%s", "database is invisible for the transaction");
-			goto error;
-		}
-		break;
-	case SE_ONLINE:
-	case SE_RECOVER:
-		break;
-	default: goto error;
-	}
-	return se_dbread(db, key, &t->t, 1, NULL, SS_EQ);
+	if (ssunlikely(! se_active(e)))
+		goto error;
+
+	return se_read(db, key, &t->t, t->t.vlsn, NULL);
 error:
 	so_destroy(&key->o);
 	return NULL;
 }
 
-void se_txend(setx *t)
+static inline void
+se_txfree(so *o)
+{
+	assert(o->destroyed);
+	se *e = se_of(o);
+	setx *t = (setx*)o;
+	sv_logfree(&t->log, &e->r);
+	ss_free(&e->a, o);
+}
+
+static inline void
+se_txend(setx *t, int rlb, int conflict)
 {
 	se *e = se_of(&t->o);
 	sx_gc(&t->t);
-	se_dbunbind(e, t->t.id);
-	so_listdel(&e->tx, &t->o);
-	se_mark_destroyed(&t->o);
-	ss_free(&e->a_tx, t);
+	uint32_t count = sv_logcount(&t->log);
+	sv_logreset(&t->log, e->db.n);
+	sr_statxm(&e->xm_stat, t->start, count, rlb, conflict);
+	so_mark_destroyed(&t->o);
+	so_poolgc(&e->tx, &t->o);
 }
 
 static int
-se_txrollback(so *o)
+se_txdestroy(so *o)
 {
 	setx *t = se_cast(o, setx*, SETX);
 	sx_rollback(&t->t);
-	se_txend(t);
+	se_txend(t, 1, 0);
 	return 0;
+}
+
+static int
+se_txprepare(sx *x, svv *v, so *o, void *ptr)
+{
+	sicache *cache = ptr;
+	sedb *db = (sedb*)o;
+	siread rq;
+	si_readopen(&rq, db->index, cache,
+	            SS_EQ,
+	            x->vlsn,
+	            sv_vpointer(v),
+	            NULL,
+	            NULL,
+	            0,
+	            1,
+	            0);
+	int rc = si_read(&rq);
+	si_readclose(&rq);
+	return rc;
 }
 
 static int
@@ -148,66 +160,59 @@ se_txcommit(so *o)
 {
 	setx *t = se_cast(o, setx*, SETX);
 	se *e = se_of(o);
-	int status = se_status(&e->status);
-	if (ssunlikely(! se_statusactive_is(status)))
+	int status = sr_status(&e->status);
+	if (ssunlikely(! sr_statusactive_is(status)))
 		return -1;
-	int recover = (status == SE_RECOVER);
+	int recover = (status == SR_RECOVER);
+	int rc;
+
 	/* prepare transaction */
-	if (ssunlikely(! sv_logcount(&t->t.log))) {
-		sx_prepare(&t->t);
-		sx_commit(&t->t);
-		se_txend(t);
-		return 0;
-	}
-	if (t->t.state == SXREADY || t->t.state == SXLOCK)
+	if (t->t.state == SX_READY || t->t.state == SX_LOCK)
 	{
-		sxstate s = sx_prepare(&t->t);
-		if (s == SXLOCK)
+		sicache *cache = NULL;
+		sxpreparef prepare = NULL;
+		if (! recover) {
+			prepare = se_txprepare;
+			cache = si_cachepool_pop(&e->cachepool);
+			if (ssunlikely(cache == NULL))
+				return sr_oom(&e->error);
+		}
+		sxstate s = sx_prepare(&t->t, prepare, cache);
+		if (cache)
+			si_cachepool_push(cache);
+		if (s == SX_LOCK) {
+			sr_statxm_lock(&e->xm_stat);
 			return 2;
-		if (s == SXROLLBACK) {
+		}
+		if (s == SX_ROLLBACK) {
 			sx_rollback(&t->t);
-			se_txend(t);
+			se_txend(t, 0, 1);
 			return 1;
 		}
-		assert(s == SXPREPARE);
+		assert(s == SX_PREPARE);
 
-		if (t->half_commit) {
-			/* Half commit mode.
-			 *
-			 * A half committed transaction is no longer
-			 * being part of concurrent index, but still can be
-			 * commited or rolled back.
-			 * Yet, it is important to maintain external
-			 * serial commit order.
-			*/
-			sx_complete(&t->t);
-			return 0;
-		}
 		sx_commit(&t->t);
 	}
-	assert(t->t.state == SXCOMMIT);
+	assert(t->t.state == SX_COMMIT);
 
-	/* prepare for wal and index write */
-	sereq q;
-	se_reqinit(e, &q, SE_REQWRITE, &t->o, NULL);
-	sereqarg *arg = &q.arg;
-	arg->log = &t->t.log;
-	arg->lsn = 0;
-	if (recover || e->meta.commit_lsn)
-		arg->lsn = t->lsn;
-	if (ssunlikely(recover)) {
-		arg->recover = 1;
-		arg->vlsn_generate = 0;
-		arg->vlsn = sr_seq(e->r.seq, SR_LSN);
-	} else {
-		arg->vlsn_generate = 1;
-		arg->vlsn = 0;
+	/* wal write and multi-index write */
+	rc = sc_commit(&e->scheduler, &t->log, t->lsn, recover);
+	if (ssunlikely(rc == -1)) {
+		/* free the transaction log in case of
+		 * commit error */
+		ssiter i;
+		ss_iterinit(ss_bufiter, &i);
+		ss_iteropen(ss_bufiter, &i, &t->log.buf, sizeof(svlogv));
+		for (; ss_iterhas(ss_bufiter, &i); ss_iternext(ss_bufiter, &i))
+		{
+			svlogv *lv = ss_iterof(ss_bufiter, &i);
+			sedb *db = (sedb*)se_dbmatch_id(e, lv->index_id);
+			assert(db != NULL);
+			sv_vunref(db->r, lv->v);
+		}
 	}
-	/* log write and commit */
-	se_execute(&q);
-
-	se_txend(t);
-	return q.rc;
+	se_txend(t, 0, 0);
+	return rc;
 }
 
 static int
@@ -217,53 +222,71 @@ se_txset_int(so *o, const char *path, int64_t v)
 	if (strcmp(path, "lsn") == 0) {
 		t->lsn = v;
 		return 0;
-	} else
-	if (strcmp(path, "half_commit") == 0) {
-		t->half_commit = v;
-		return 0;
 	}
+	return -1;
+}
+
+static int64_t
+se_txget_int(so *o, const char *path)
+{
+	setx *t = se_cast(o, setx*, SETX);
+	if (strcmp(path, "deadlock") == 0)
+		return sx_deadlock(&t->t);
 	return -1;
 }
 
 static soif setxif =
 {
 	.open         = NULL,
-	.destroy      = se_txrollback,
-	.error        = NULL,
-	.object       = NULL,
-	.asynchronous = NULL,
-	.poll         = NULL,
-	.drop         = NULL,
-	.setobject    = NULL,
+	.destroy      = se_txdestroy,
+	.free         = se_txfree,
+	.document     = NULL,
 	.setstring    = NULL,
 	.setint       = se_txset_int,
 	.getobject    = NULL,
 	.getstring    = NULL,
-	.getint       = NULL,
+	.getint       = se_txget_int,
 	.set          = se_txset,
-	.update       = se_txupdate,
+	.upsert       = se_txupsert,
 	.del          = se_txdelete,
 	.get          = se_txget,
-	.batch        = NULL,
 	.begin        = NULL,
 	.prepare      = NULL,
 	.commit       = se_txcommit,
-	.cursor       = NULL,
+	.cursor       = NULL
 };
 
 so *se_txnew(se *e)
 {
-	setx *t = ss_malloc(&e->a_tx, sizeof(setx));
+	int cache;
+	setx *t = (setx*)so_poolpop(&e->tx);
+	if (! t) {
+		t = ss_malloc(&e->a, sizeof(setx));
+		cache = 0;
+	} else {
+		cache = 1;
+	}
 	if (ssunlikely(t == NULL)) {
 		sr_oom(&e->error);
 		return NULL;
 	}
-	memset(t, 0, sizeof(*t));
 	so_init(&t->o, &se_o[SETX], &setxif, &e->o, &e->o);
-	sx_init(&e->xm, &t->t);
+	if (! cache) {
+		int rc = sv_loginit(&t->log, &e->r, e->db.n);
+		if (ssunlikely(rc == -1)) {
+			ss_free(&e->a, t);
+			return NULL;
+		}
+		sslist *i;
+		ss_listforeach(&e->db.list, i) {
+			sedb *db = (sedb*)sscast(i, so, link);
+			sv_loginit_index(&t->log, db->index->scheme.id, db->r);
+		}
+	}
+	sx_init(&e->xm, &t->t, &t->log);
+	t->start = ss_utime();
 	t->lsn = 0;
-	sx_begin(&e->xm, &t->t, SXRW, 0);
-	se_dbbind(e);
-	so_listadd(&e->tx, &t->o);
+	sx_begin(&e->xm, &t->t, SX_RW, &t->log, UINT64_MAX);
+	so_pooladd(&e->tx, &t->o);
 	return &t->o;
 }

@@ -12,44 +12,50 @@
 typedef struct sr sr;
 
 struct sr {
+	srstatus *status;
+	srlog *log;
 	srerror *e;
-	sfupdate *fmt_update;
-	sfstorage fmt_storage;
-	sf fmt;
-	srscheme *scheme;
+	sfupsert *upsert;
+	sfscheme *scheme;
 	srseq *seq;
 	ssa *a;
-	ssquota *quota;
+	ssa *av;
+	ssvfs *vfs;
 	ssinjection *i;
-	void *compression;
+	srstat *stat;
 	sscrcf crc;
+	void *ptr;
 };
 
 static inline void
 sr_init(sr *r,
+        srstatus *status,
+        srlog *log,
         srerror *e,
         ssa *a,
-        ssquota *quota,
+        ssa *av,
+        ssvfs *vfs,
         srseq *seq,
-        sf fmt,
-        sfstorage fmt_storage,
-        sfupdate *fmt_update,
-        srscheme *scheme,
+        sfupsert *upsert,
+        sfscheme *scheme,
         ssinjection *i,
+        srstat *stat,
         sscrcf crc,
-        void *compression)
+        void *ptr)
 {
-	r->e           = e;
-	r->a           = a;
-	r->quota       = quota;
-	r->seq         = seq;
-	r->scheme      = scheme;
-	r->fmt         = fmt;
-	r->fmt_storage = fmt_storage;
-	r->fmt_update  = fmt_update;
-	r->i           = i;
-	r->compression = compression;
-	r->crc         = crc;
+	r->status = status;
+	r->log    = log;
+	r->e      = e;
+	r->a      = a;
+	r->av     = av;
+	r->vfs    = vfs;
+	r->seq    = seq;
+	r->scheme = scheme;
+	r->upsert = upsert;
+	r->i      = i;
+	r->stat   = stat;
+	r->crc    = crc;
+	r->ptr    = ptr;
 }
 
 #endif

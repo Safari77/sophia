@@ -10,56 +10,110 @@
 */
 
 typedef struct sxv sxv;
+typedef struct sxvpool sxvpool;
 
 struct sxv {
-	uint32_t id, lo;
-	uint64_t csn;
-	void *index;
-	svv *v;
-	sxv *next;
-	sxv *prev;
-	ssrbnode node;
+	uint64_t  id;
+	uint32_t  lo;
+	uint64_t  csn;
+	uint8_t   conflict;
+	void     *index;
+	svv      *v;
+	sxv      *next;
+	sxv      *prev;
+	sxv      *gc;
+	ssrbnode  node;
 } sspacked;
 
-extern svif sx_vif;
+struct sxvpool {
+	sxv *head;
+	int n;
+	ssa *a;
+};
+
+static inline void
+sx_vpool_init(sxvpool *p, ssa *a)
+{
+	p->head = NULL;
+	p->n = 0;
+	p->a = a;
+}
+
+static inline void
+sx_vpool_free(sxvpool *p)
+{
+	sxv *n, *c = p->head;
+	while (c) {
+		n = c->next;
+		ss_free(p->a, c);
+		c = n;
+	}
+}
 
 static inline sxv*
-sx_valloc(ssa *asxv, svv *v)
+sx_vpool_pop(sxvpool *p)
 {
-	sxv *vv = ss_malloc(asxv, sizeof(sxv));
-	if (ssunlikely(vv == NULL))
+	if (ssunlikely(p->n == 0))
 		return NULL;
-	vv->index = NULL;
-	vv->id    = 0;
-	vv->lo    = 0;
-	vv->csn   = 0;
-	vv->v     = v;
-	vv->next  = NULL;
-	vv->prev  = NULL;
-	memset(&vv->node, 0, sizeof(vv->node));
-	return vv;
+	sxv *v = p->head;
+	p->head = v->next;
+	p->n--;
+	return v;
 }
 
 static inline void
-sx_vfree(ssa *a, ssa *asxv, sxv *v)
+sx_vpool_push(sxvpool *p, sxv *v)
 {
-	sv_vfree(a, v->v);
-	ss_free(asxv, v);
+	v->v    = NULL;
+	v->next = NULL;
+	v->prev = NULL;
+	v->next = p->head;
+	p->head = v;
+	p->n++;
+}
+
+static inline sxv*
+sx_valloc(sxvpool *p, svv *ref)
+{
+	sxv *v = sx_vpool_pop(p);
+	if (ssunlikely(v == NULL)) {
+		v = ss_malloc(p->a, sizeof(sxv));
+		if (ssunlikely(v == NULL))
+			return NULL;
+	}
+	v->index    = NULL;
+	v->id       = 0;
+	v->lo       = 0;
+	v->csn      = 0;
+	v->v        = ref;
+	v->next     = NULL;
+	v->prev     = NULL;
+	v->gc       = NULL;
+	v->conflict = 0;
+	memset(&v->node, 0, sizeof(v->node));
+	return v;
 }
 
 static inline void
-sx_vfreeall(ssa *a, ssa *asxv, sxv *v)
+sx_vfree(sxvpool *p, sr *r, sxv *v)
+{
+	sv_vunref(r, v->v);
+	sx_vpool_push(p, v);
+}
+
+static inline void
+sx_vfreeall(sxvpool *p, sr *r, sxv *v)
 {
 	while (v) {
 		sxv *next = v->next;
-		sv_vfree(a, v->v);
-		ss_free(asxv, v);
+		sx_vfree(p, r, v);
 		v = next;
 	}
 }
 
 static inline sxv*
-sx_vmatch(sxv *head, uint32_t id) {
+sx_vmatch(sxv *head, uint64_t id)
+{
 	sxv *c = head;
 	while (c) {
 		if (c->id == id)
@@ -70,7 +124,8 @@ sx_vmatch(sxv *head, uint32_t id) {
 }
 
 static inline void
-sx_vreplace(sxv *v, sxv *n) {
+sx_vreplace(sxv *v, sxv *n)
+{
 	if (v->prev)
 		v->prev->next = n;
 	if (v->next)
@@ -80,7 +135,8 @@ sx_vreplace(sxv *v, sxv *n) {
 }
 
 static inline void
-sx_vlink(sxv *head, sxv *v) {
+sx_vlink(sxv *head, sxv *v)
+{
 	sxv *c = head;
 	while (c->next)
 		c = c->next;
@@ -90,7 +146,8 @@ sx_vlink(sxv *head, sxv *v) {
 }
 
 static inline void
-sx_vunlink(sxv *v) {
+sx_vunlink(sxv *v)
+{
 	if (v->prev)
 		v->prev->next = v->next;
 	if (v->next)
@@ -102,7 +159,7 @@ sx_vunlink(sxv *v) {
 static inline void
 sx_vcommit(sxv *v, uint32_t csn)
 {
-	v->id  = UINT32_MAX;
+	v->id  = UINT64_MAX;
 	v->lo  = UINT32_MAX;
 	v->csn = csn;
 }
@@ -110,7 +167,28 @@ sx_vcommit(sxv *v, uint32_t csn)
 static inline int
 sx_vcommitted(sxv *v)
 {
-	return v->id == UINT32_MAX && v->lo == UINT32_MAX;
+	return v->id == UINT64_MAX && v->lo == UINT32_MAX;
+}
+
+static inline void
+sx_vabort(sxv *v)
+{
+	v->conflict = 1;
+}
+
+static inline void
+sx_vabort_all(sxv *v)
+{
+	while (v) {
+		sx_vabort(v);
+		v = v->next;
+	}
+}
+
+static inline int
+sx_vaborted(sxv *v)
+{
+	return v->conflict;
 }
 
 #endif

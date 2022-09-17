@@ -27,12 +27,14 @@ struct str {
 
 	/* runtime */
 	ssa          a;
+	ssvfs        vfs;
 	ssinjection  injection;
-	srscheme     scheme;
+	srstat       stat;
+	sfscheme     scheme;
+	srstatus     status;
+	srlog        log;
 	srerror      error;
 	srseq        seq;
-	sf           fmt;
-	sfstorage    fmt_storage;
 	sscrcf       crc;
 	ssfilterif  *compression;
 	sr           r;
@@ -55,6 +57,9 @@ struct str {
 	int          stat_stmt;
 	int          stat_test;
 	time_t       start;
+
+	/* misc */
+	uint32_t     size;
 };
 
 extern str st_r;

@@ -47,13 +47,13 @@ sv_mergeiter_gt(svmergeiter *i)
 	}
 	i->v = NULL;
 	svmergesrc *min, *src;
-	sv *minv;
+	char *minv;
 	minv = NULL;
 	min  = NULL;
 	src  = i->src;
 	for (; src < i->end; src = sv_mergenextof(src))
 	{
-		sv *v = ss_iteratorof(src->i);
+		char *v = ss_iteratorof(src->i);
 		if (v == NULL)
 			continue;
 		if (min == NULL) {
@@ -61,11 +61,12 @@ sv_mergeiter_gt(svmergeiter *i)
 			min = src;
 			continue;
 		}
-		int rc = sv_compare(minv, v, i->r->scheme);
+		int rc;
+		rc = sf_compare(i->r->scheme, minv, v);
 		switch (rc) {
 		case 0:
 			/*
-			assert(sv_lsn(v) < sv_lsn(minv));
+			assert( lsn(v) < lsn(minv) );
 			*/
 			src->dup = 1;
 			break;
@@ -90,13 +91,13 @@ sv_mergeiter_lt(svmergeiter *i)
 	}
 	i->v = NULL;
 	svmergesrc *max, *src;
-	sv *maxv;
+	char *maxv;
 	maxv = NULL;
 	max  = NULL;
 	src  = i->src;
 	for (; src < i->end; src = sv_mergenextof(src))
 	{
-		sv *v = ss_iteratorof(src->i);
+		char *v = ss_iteratorof(src->i);
 		if (v == NULL)
 			continue;
 		if (max == NULL) {
@@ -104,7 +105,8 @@ sv_mergeiter_lt(svmergeiter *i)
 			max = src;
 			continue;
 		}
-		int rc = sv_compare(maxv, v, i->r->scheme);
+		int rc;
+		rc = sf_compare(i->r->scheme, maxv, v);
 		switch (rc) {
 		case  0:
 			/*

@@ -12,12 +12,21 @@
 #include <libsr.h>
 #include <libso.h>
 #include <libsv.h>
-#include <libsl.h>
+#include <libsw.h>
 #include <libsd.h>
 #include <libsi.h>
 #include <libsx.h>
 #include <libsy.h>
+#include <libsc.h>
 #include <libse.h>
+
+static void
+se_cursorfree(so *o)
+{
+	assert(o->destroyed);
+	se *e = se_of(o);
+	ss_free(&e->a, o);
+}
 
 static int
 se_cursordestroy(so *o)
@@ -25,13 +34,16 @@ se_cursordestroy(so *o)
 	secursor *c = se_cast(o, secursor*, SECURSOR);
 	se *e = se_of(&c->o);
 	sx_rollback(&c->t);
-	uint32_t id = c->t.id;
 	if (c->cache)
 		si_cachepool_push(c->cache);
-	so_listdel(&e->cursor, &c->o);
-	se_dbunbind(e, id);
-	se_mark_destroyed(&c->o);
-	ss_free(&e->a_cursor, c);
+	if (c->read_db) {
+		sr_statcursor(&c->read_db->stat, c->start,
+		              c->read_disk,
+		              c->read_cache,
+		              c->ops);
+	}
+	so_mark_destroyed(&c->o);
+	so_poolgc(&e->cursor, &c->o);
 	return 0;
 }
 
@@ -39,34 +51,37 @@ static void*
 se_cursorget(so *o, so *v)
 {
 	secursor *c = se_cast(o, secursor*, SECURSOR);
-	sev *key = se_cast(v, sev*, SEV);
+	sedocument *key = se_cast(v, sedocument*, SEDOCUMENT);
 	sedb *db = se_cast(v->parent, sedb*, SEDB);
-	ssorder order = key->order;
+	if (ssunlikely(c->read_db == NULL))
+		c->read_db = db;
 	if (ssunlikely(! key->orderset))
-		order = SS_GTE;
-	return se_dbread(db, key, &c->t, 0, c->cache, order);
+		key->order = SS_GTE;
+	sedocument *ret =
+		(sedocument*)se_read(db, key, NULL, c->t.vlsn, c->cache);
+	if (ret == NULL)
+		return NULL;
+	c->read_disk  += ret->read_disk;
+	c->read_cache += ret->read_cache;
+	c->ops++;
+	return ret;
 }
 
 static soif secursorif =
 {
 	.open         = NULL,
 	.destroy      = se_cursordestroy,
-	.error        = NULL,
-	.object       = NULL,
-	.asynchronous = NULL,
-	.poll         = NULL,
-	.drop         = NULL,
-	.setobject    = NULL,
+	.free         = se_cursorfree,
+	.document     = NULL,
 	.setstring    = NULL,
 	.setint       = NULL,
 	.getobject    = NULL,
 	.getstring    = NULL,
 	.getint       = NULL,
 	.set          = NULL,
-	.update       = NULL,
+	.upsert       = NULL,
 	.del          = NULL,
 	.get          = se_cursorget,
-	.batch        = NULL,
 	.begin        = NULL,
 	.prepare      = NULL,
 	.commit       = NULL,
@@ -75,21 +90,30 @@ static soif secursorif =
 
 so *se_cursornew(se *e, uint64_t vlsn)
 {
-	secursor *c = ss_malloc(&e->a_cursor, sizeof(secursor));
+	secursor *c = (secursor*)so_poolpop(&e->cursor);
+	if (c == NULL)
+		c = ss_malloc(&e->a, sizeof(secursor));
 	if (ssunlikely(c == NULL)) {
 		sr_oom(&e->error);
 		return NULL;
 	}
 	so_init(&c->o, &se_o[SECURSOR], &secursorif, &e->o, &e->o);
-	sx_init(&e->xm, &c->t);
-	c->t.state = SXUNDEF;
+	sv_loginit(&c->log, &e->r, 0);
+	sx_init(&e->xm, &c->t, &c->log);
+	c->start = ss_utime();
+	c->ops = 0;
+	c->read_disk = 0;
+	c->read_cache = 0;
+	c->read_db = NULL;
+	c->t.state = SX_UNDEF;
 	c->cache = si_cachepool_pop(&e->cachepool);
 	if (ssunlikely(c->cache == NULL)) {
-		ss_free(&e->a_cursor, c);
+		so_mark_destroyed(&c->o);
+		so_poolpush(&e->cursor, &c->o);
+		sr_oom(&e->error);
 		return NULL;
 	}
-	sx_begin(&e->xm, &c->t, SXRO, vlsn);
-	se_dbbind(e);
-	so_listadd(&e->cursor, &c->o);
+	sx_begin(&e->xm, &c->t, SX_RO, &c->log, vlsn);
+	so_pooladd(&e->cursor, &c->o);
 	return &c->o;
 }

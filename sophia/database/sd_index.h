@@ -16,7 +16,6 @@ typedef struct sdindex sdindex;
 struct sdindexheader {
 	uint32_t  crc;
 	srversion version;
-	sdid      id;
 	uint64_t  offset;
 	uint32_t  size;
 	uint32_t  sizevmax;
@@ -29,8 +28,7 @@ struct sdindexheader {
 	uint64_t  lsnmax;
 	uint32_t  dupkeys;
 	uint64_t  dupmin;
-	uint32_t  extension;
-	char      reserve[32];
+	uint16_t  align;
 } sspacked;
 
 struct sdindexpage {
@@ -45,14 +43,13 @@ struct sdindexpage {
 } sspacked;
 
 struct sdindex {
-	ssbuf i, v;
+	ssbuf i;
 	sdindexheader *h;
 };
 
 static inline char*
 sd_indexpage_min(sdindex *i, sdindexpage *p) {
-	return (char*)i->i.s + sizeof(sdindexheader) +
-	             (i->h->count * sizeof(sdindexpage)) + p->offsetindex;
+	return (char*)i->i.s + p->offsetindex;
 }
 
 static inline char*
@@ -63,28 +60,29 @@ sd_indexpage_max(sdindex *i, sdindexpage *p) {
 static inline void
 sd_indexinit(sdindex *i) {
 	ss_bufinit(&i->i);
-	ss_bufinit(&i->v);
 	i->h = NULL;
 }
 
 static inline void
 sd_indexfree(sdindex *i, sr *r) {
 	ss_buffree(&i->i, r->a);
-	ss_buffree(&i->v, r->a);
 }
 
 static inline sdindexheader*
 sd_indexheader(sdindex *i) {
-	return (sdindexheader*)(i->i.s);
+	assert(i->i.s != NULL);
+	return (sdindexheader*)(i->i.p - sizeof(sdindexheader));
 }
 
 static inline sdindexpage*
 sd_indexpage(sdindex *i, uint32_t pos)
 {
 	assert(pos < i->h->count);
-	char *p = (char*)ss_bufat(&i->i, sizeof(sdindexpage), pos);
-   	p += sizeof(sdindexheader);
-	return (sdindexpage*)p;
+	sdindexpage *index =
+		(sdindexpage*)
+			((char*)i->h - (i->h->align +
+			               (i->h->count * sizeof(sdindexpage))));
+	return &index[pos];
 }
 
 static inline sdindexpage*
@@ -100,28 +98,52 @@ sd_indexmax(sdindex *i) {
 static inline uint32_t
 sd_indexkeys(sdindex *i)
 {
-	if (ssunlikely(i->i.s == NULL))
-		return 0;
+	assert(i->h != NULL);
 	return sd_indexheader(i)->keys;
 }
 
 static inline uint32_t
 sd_indextotal(sdindex *i)
 {
-	if (ssunlikely(i->i.s == NULL))
-		return 0;
+	assert(i->h != NULL);
 	return sd_indexheader(i)->total;
 }
 
 static inline uint32_t
-sd_indexsize(sdindexheader *h)
+sd_indexsize_ext(sdindexheader *h)
 {
-	return sizeof(sdindexheader) + h->size;
+	return h->align + h->size + sizeof(sdindexheader);
 }
 
-int sd_indexbegin(sdindex*, sr*);
-int sd_indexcommit(sdindex*, sr*, sdid*, uint64_t);
-int sd_indexadd(sdindex*, sr*, sdbuild*, uint64_t);
-int sd_indexcopy(sdindex*, sr*, sdindexheader*);
+static inline int
+sd_indexcopy(sdindex *i, sr *r, sdindexheader *h)
+{
+	int size = sd_indexsize_ext(h);
+	int rc = ss_bufensure(&i->i, r->a, size);
+	if (ssunlikely(rc == -1))
+		return sr_oom(r->e);
+	char *start = (char*)h - (h->align + h->size);
+	memcpy(i->i.s, start, size);
+	ss_bufadvance(&i->i, size);
+	i->h = sd_indexheader(i);
+	return 0;
+}
+
+static inline int
+sd_indexcopy_buf(sdindex *i, sr *r, ssbuf *v, ssbuf *m)
+{
+	sdindexheader *h = (sdindexheader*)(m->p - sizeof(sdindexheader));
+	int size = sd_indexsize_ext(h);
+	assert(size == (ss_bufused(v) + ss_bufused(m)));
+	int rc = ss_bufensure(&i->i, r->a, size);
+	if (ssunlikely(rc == -1))
+		return sr_oom(r->e);
+	memcpy(i->i.s, v->s, ss_bufused(v));
+	ss_bufadvance(&i->i, ss_bufused(v));
+	memcpy(i->i.p, m->s, ss_bufused(m));
+	ss_bufadvance(&i->i, ss_bufused(m));
+	i->h = sd_indexheader(i);
+	return 0;
+}
 
 #endif

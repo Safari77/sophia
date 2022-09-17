@@ -14,41 +14,37 @@ typedef struct sxindex sxindex;
 typedef struct sx sx;
 
 typedef enum {
-	SXUNDEF,
-	SXREADY,
-	SXCOMMIT,
-	SXPREPARE,
-	SXROLLBACK,
-	SXLOCK
+	SX_UNDEF,
+	SX_ROLLBACK,
+	SX_LOCK,
+	SX_READY,
+	SX_COMMIT,
+	SX_PREPARE
 } sxstate;
 
 typedef enum {
-	SXRO,
-	SXRW
+	SX_RO,
+	SX_RW
 } sxtype;
-
-enum {
-	SXCOMPLETE = 1,
-	SXCONFLICT = 2
-};
 
 struct sxindex {
 	ssrb      i;
 	uint32_t  dsn;
-	void     *ptr;
+	so       *object;
 	sr       *r;
 	sslist    link;
 };
 
+typedef int (*sxpreparef)(sx*, svv*, so*, void*);
+
 struct sx {
 	sxtype     type;
 	sxstate    state;
-	int        flags;
-	uint32_t   id;
+	uint64_t   id;
 	uint64_t   vlsn;
 	uint64_t   csn;
 	int        log_read;
-	svlog      log;
+	svlog     *log;
 	sslist     deadlock;
 	ssrbnode   node;
 	sxmanager *manager;
@@ -60,30 +56,29 @@ struct sxmanager {
 	ssrb        i;
 	uint32_t    count_rd;
 	uint32_t    count_rw;
+	uint32_t    count_gc;
 	uint64_t    csn;
-	ssa        *asxv;
-	sr         *r;
+	sxv        *gc;
+	sxvpool     pool;
+	srseq      *seq;
 };
 
-int       sx_managerinit(sxmanager*, sr*, ssa*);
+int       sx_managerinit(sxmanager*, srseq*, ssa*);
 int       sx_managerfree(sxmanager*);
-int       sx_indexinit(sxindex*, sxmanager*, sr*, void*);
+int       sx_indexinit(sxindex*, sxmanager*, sr*, so*);
 int       sx_indexset(sxindex*, uint32_t);
 int       sx_indexfree(sxindex*, sxmanager*);
-sx       *sx_find(sxmanager*, uint32_t);
-void      sx_init(sxmanager*, sx*);
-sxstate   sx_begin(sxmanager*, sx*, sxtype, uint64_t);
+sx       *sx_find(sxmanager*, uint64_t);
+void      sx_init(sxmanager*, sx*, svlog*);
+sxstate   sx_begin(sxmanager*, sx*, sxtype, svlog*, uint64_t);
 void      sx_gc(sx*);
-sxstate   sx_prepare(sx*);
-sxstate   sx_complete(sx*);
+sxstate   sx_prepare(sx*, sxpreparef, void*);
 sxstate   sx_commit(sx*);
 sxstate   sx_rollback(sx*);
 int       sx_set(sx*, sxindex*, svv*);
-int       sx_get(sx*, sxindex*, sv*, sv*);
-uint32_t  sx_min(sxmanager*);
-uint32_t  sx_max(sxmanager*);
+int       sx_get(sx*, sxindex*, svv*, svv**);
 uint64_t  sx_vlsn(sxmanager*);
-
-sxstate   sx_getstmt(sxmanager*, sxindex*);
+sxstate   sx_set_autocommit(sxmanager*, sxindex*, sx*, svlog*, svv*);
+sxstate   sx_get_autocommit(sxmanager*, sxindex*);
 
 #endif

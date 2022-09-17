@@ -9,6 +9,16 @@
  * BSD License
 */
 
-uint32_t si_gcv(ssa*, svv*);
+void si_gcv(sr*, svv*);
+
+static inline void
+si_gcvall(sr *r, svv *v)
+{
+	while (v) {
+		svv *n = v->next;
+		si_gcv(r, v);
+		v = n;
+	}
+}
 
 #endif

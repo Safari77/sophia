@@ -3,18 +3,19 @@
 #
 
 SOPHIA_VMAJOR   = 2
-SOPHIA_VMINOR   = 1
+SOPHIA_VMINOR   = 2
 SOPHIA_BUILD   := $(shell git rev-parse --short HEAD)
 SOPHIA_DIRS     = std \
                   format \
                   runtime \
                   object \
                   version \
-                  log \
+                  wal \
                   database \
                   index \
                   transaction \
                   repository \
+                  scheduler \
                   environment \
                   sophia
 

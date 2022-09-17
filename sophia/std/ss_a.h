@@ -22,7 +22,7 @@ struct ssaif {
 
 struct ssa {
 	ssaif *i;
-	char priv[48];
+	char priv[128];
 };
 
 static inline int

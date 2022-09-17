@@ -5,7 +5,7 @@
 CC ?= cc
 
 ifdef ENABLE_COVERAGE
-CFLAGS_COVERAGE = --coverage
+CFLAGS_COVERAGE = --coverage 
 else
 CFLAGS_COVERAGE =
 endif
@@ -21,34 +21,35 @@ SOPHIA_CFLAGS  = $(CFLAGS_DEBUG) \
                  $(CFLAGS_MISC) \
                  $(CFLAGS)
 SOPHIA_LDFLAGS = -shared $(LDFLAGS)
+SOPHIA_DEP     = $(wildcard sophia/*/*) makefile
+SOPHIA_VMAJOR  = 2
+SOPHIA_VMINOR  = 2
+SOPHIA_BUILD   = `git rev-parse --short HEAD`
 
-all: static dynamic
+all: banner static dynamic
 banner:
-	@echo SOPHIA v2.1.1
-	@echo "cc: $(CC)"
-	@echo "cflags: $(CFLAGS_DEBUG) $(CFLAGS_COVERAGE)$(CFLAGS_OPT) $(CFLAGS_STRICT)"
+	@echo "SOPHIA $(SOPHIA_VMAJOR).$(SOPHIA_VMINOR) (git: $(SOPHIA_BUILD))"
 	@echo
-sophia.c:
-	@echo build
+sophia.c: $(SOPHIA_DEP)
+	@echo sophia/build
 	@sh sophia/build sophia $@
-	@echo cc $@
-sophia.h:
-	@cp sophia/sophia/sophia.h .
-sophia.o: banner clean sophia.c sophia.h
+sophia.h: sophia/sophia/sophia.h
+	@cp $< .
+sophia.o: sophia.c sophia.h
+	@echo "$(CC) sophia.c -c $(CFLAGS_DEBUG) $(CFLAGS_COVERAGE)$(CFLAGS_OPT) $(CFLAGS_STRICT)"
 	@$(CC) $(SOPHIA_CFLAGS) -c sophia.c -o sophia.o
+	@echo
 libsophia.a: sophia.o
-	@echo "ar libsophia.a"
 	@ar crs libsophia.a sophia.o
 libsophia.so: sophia.o
-	@echo "ld libsophia.so"
-	@$(CC) sophia.o $(SOPHIA_LDFLAGS) -o libsophia.so.2.1.1
-	@ln -sf libsophia.so.2.1.1 libsophia.so.2.1
-	@ln -sf libsophia.so.2.1.1 libsophia.so
+	@$(CC) sophia.o $(SOPHIA_LDFLAGS) -o libsophia.so.2.2.0
+	@ln -sf libsophia.so.2.2.0 libsophia.so.2.2
+	@ln -sf libsophia.so.2.2.0 libsophia.so
 ifeq ($(shell uname), Linux)
-	@strip --strip-unneeded libsophia.so.2.1.1
+	@strip --strip-unneeded libsophia.so.2.2.0
 endif
 ifeq ($(shell uname), Darwin)
-	@strip -u -r -x libsophia.so.2.1.1
+	@strip -u -r -x libsophia.so.2.2.0
 endif
 static: libsophia.a
 dynamic: libsophia.so
@@ -56,7 +57,7 @@ clean:
 	@rm -f sophia.c sophia.h sophia.o
 	@rm -f libsophia.a
 	@rm -f libsophia.so
-	@rm -f libsophia.so.2.1
-	@rm -f libsophia.so.2.1.1
+	@rm -f libsophia.so.2.2
+	@rm -f libsophia.so.2.2.0
 
 .PHONY: all banner static dynamic clean

@@ -9,10 +9,13 @@
  * BSD License
 */
 
-#define SR_VERSION_MAGIC  8529643324614668147ULL
-#define SR_VERSION_A '2'
-#define SR_VERSION_B '1'
-#define SR_VERSION_C '1'
+#define SR_VERSION_MAGIC      8529643324614668147ULL
+
+#define SR_VERSION_A         '2'
+#define SR_VERSION_B         '2'
+
+#define SR_VERSION_STORAGE_A '2'
+#define SR_VERSION_STORAGE_B '2'
 
 #if defined(SOPHIA_BUILD)
 # define SR_VERSION_COMMIT SOPHIA_BUILD
@@ -33,19 +36,38 @@ sr_version(srversion *v)
 	v->magic = SR_VERSION_MAGIC;
 	v->a = SR_VERSION_A;
 	v->b = SR_VERSION_B;
-	v->c = SR_VERSION_C;
+	v->c = 0;
 }
 
 static inline int
-sr_versioncheck(srversion *v)
+sr_version_check(srversion *v)
 {
 	if (v->magic != SR_VERSION_MAGIC)
 		return 0;
-	if (v->a != SR_VERSION_A)
+	if (v->a != SR_VERSION_STORAGE_A)
 		return 0;
-	if (v->b != SR_VERSION_B)
+	if (v->b != SR_VERSION_STORAGE_B)
 		return 0;
-	if (v->c != SR_VERSION_C)
+	return 1;
+}
+
+static inline void
+sr_version_storage(srversion *v)
+{
+	v->magic = SR_VERSION_MAGIC;
+	v->a = SR_VERSION_STORAGE_A;
+	v->b = SR_VERSION_STORAGE_B;
+	v->c = 0;
+}
+
+static inline int
+sr_versionstorage_check(srversion *v)
+{
+	if (v->magic != SR_VERSION_MAGIC)
+		return 0;
+	if (v->a != SR_VERSION_STORAGE_A)
+		return 0;
+	if (v->b != SR_VERSION_STORAGE_B)
 		return 0;
 	return 1;
 }

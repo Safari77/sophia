@@ -18,7 +18,17 @@
 int exists(char *path, char *name) {
 	char file[1024];
 	snprintf(file, sizeof(file), "%s/%s", path, name);
-	return ss_fileexists(file);
+	return ss_vfsexists(&st_r.vfs, file);
+}
+
+int touch(char *path, char *name) {
+	char file[1024];
+	snprintf(file, sizeof(file), "%s/%s", path, name);
+	ssfile f;
+	ss_fileinit(&f, &st_r.vfs);
+	int rc = ss_filenew(&f, file, 0);
+	ss_fileclose(&f);
+	return rc;
 }
 
 int rmrf(char *path)

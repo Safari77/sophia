@@ -20,20 +20,20 @@ sv_writeiter_iter(void)
 {
 	stlist vlista;
 	stlist vlistb;
-	st_listinit(&vlista, 0);
-	st_listinit(&vlistb, 0);
+	st_listinit(&vlista, ST_SVVRAW);
+	st_listinit(&vlistb, ST_SVVRAW);
 	int i = 0;
 	while (i < 10)
 	{
-		st_sv(&st_r.g, &vlista, 10 - i, 0, i);
+		st_svv(&st_r.g, &vlista, 10 - i, 0, i, NULL, 0);
 		i++;
 	}
 	ssiter ita;
 	ss_iterinit(ss_bufiterref, &ita);
-	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(svv*));
 	ssiter itb;
 	ss_iterinit(ss_bufiterref, &itb);
-	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(svv*));
 
 	svmerge m;
 	sv_mergeinit(&m);
@@ -48,19 +48,19 @@ sv_writeiter_iter(void)
 	ss_iterinit(sv_mergeiter, &merge);
 	ss_iteropen(sv_mergeiter, &merge, &st_r.r, &m, SS_GTE);
 
-	svupdate u;
-	sv_updateinit(&u);
+	svupsert u;
+	sv_upsertinit(&u);
 	ssiter iter;
 	ss_iterinit(sv_writeiter, &iter);
 	uint64_t limit = 20 * (sizeof(svv) + sizeof(i));
-	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 10ULL, 0, 0);
+	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 0, 0, 10ULL);
 
 	i = 0;
 	while (ss_iteratorhas(&iter)) {
-		sv *v = (sv*)ss_iteratorof(&iter);
-		t( *(int*)sv_key(v, &st_r.r, 0) == i );
-		t( sv_lsn(v) == 10 - i );
-		t( sv_flags(v) == 0 );
+		char *v = ss_iteratorof(&iter);
+		t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == i );
+		t( sf_lsn(st_r.r.scheme, v) == 10 - i );
+		t( sf_flags(st_r.r.scheme, v) == 0 );
 		ss_iteratornext(&iter);
 		i++;
 	}
@@ -69,9 +69,9 @@ sv_writeiter_iter(void)
 
 	sv_mergefree(&m, &st_r.a);
 
-	st_listfree(&vlista, &st_r.a);
-	st_listfree(&vlistb, &st_r.a);
-	sv_updatefree(&u, &st_r.r);
+	st_listfree(&vlista, &st_r.r);
+	st_listfree(&vlistb, &st_r.r);
+	sv_upsertfree(&u, &st_r.r);
 }
 
 static void
@@ -79,21 +79,21 @@ sv_writeiter_limit(void)
 {
 	stlist vlista;
 	stlist vlistb;
-	st_listinit(&vlista, 0);
-	st_listinit(&vlistb, 0);
+	st_listinit(&vlista, ST_SVVRAW);
+	st_listinit(&vlistb, ST_SVVRAW);
 	int i = 0;
 	while (i < 18)
 	{
-		st_sv(&st_r.g, &vlista, 18 - i, 0, i);
+		st_svv(&st_r.g, &vlista, 18 - i, 0, i, NULL, 0);
 		i++;
 	}
 
 	ssiter ita;
 	ss_iterinit(ss_bufiterref, &ita);
-	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(svv*));
 	ssiter itb;
 	ss_iterinit(ss_bufiterref, &itb);
-	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(svv*));
 
 	svmerge m;
 	sv_mergeinit(&m);
@@ -108,19 +108,19 @@ sv_writeiter_limit(void)
 	ss_iterinit(sv_mergeiter, &merge);
 	ss_iteropen(sv_mergeiter, &merge, &st_r.r, &m, SS_GTE);
 
-	svupdate u;
-	sv_updateinit(&u);
+	svupsert u;
+	sv_upsertinit(&u);
 	ssiter iter;
 	ss_iterinit(sv_writeiter, &iter);
-	uint64_t limit = 5 * (sizeof(svv) + sizeof(sfref) + sizeof(i));
-	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 18ULL, 0, 0);
+	uint64_t limit = 5 * (sizeof(svv) + sizeof(sfvar) + sizeof(i));
+	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 0, 0, 18ULL);
 
 	i = 0;
 	while (ss_iteratorhas(&iter)) {
-		sv *v = (sv*)ss_iteratorof(&iter);
-		t( *(int*)sv_key(v, &st_r.r, 0) == i );
-		t( sv_lsn(v) == 18 - i );
-		t( sv_flags(v) == 0 );
+		char *v = ss_iteratorof(&iter);
+		t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == i );
+		t( sf_lsn(st_r.r.scheme, v) == 18 - i );
+		t( sf_flags(st_r.r.scheme, v) == 0 );
 		ss_iteratornext(&iter);
 		i++;
 	}
@@ -128,10 +128,10 @@ sv_writeiter_limit(void)
 	int j = 0;
 	sv_writeiter_resume(&iter);
 	while (ss_iteratorhas(&iter)) {
-		sv *v = (sv*)ss_iteratorof(&iter);
-		t( *(int*)sv_key(v, &st_r.r, 0) == i );
-		t( sv_lsn(v) == 18 - i );
-		t( sv_flags(v) == 0 );
+		char *v = ss_iteratorof(&iter);
+		t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == i );
+		t( sf_lsn(st_r.r.scheme, v) == 18 - i );
+		t( sf_flags(st_r.r.scheme, v) == 0 );
 		ss_iteratornext(&iter);
 		i++;
 		j++;
@@ -140,10 +140,10 @@ sv_writeiter_limit(void)
 	j = 0;
 	sv_writeiter_resume(&iter);
 	while (ss_iteratorhas(&iter)) {
-		sv *v = (sv*)ss_iteratorof(&iter);
-		t( *(int*)sv_key(v, &st_r.r, 0) == i );
-		t( sv_lsn(v) == 18 - i );
-		t( sv_flags(v) == 0 );
+		char *v = ss_iteratorof(&iter);
+		t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == i );
+		t( sf_lsn(st_r.r.scheme, v) == 18 - i );
+		t( sf_flags(st_r.r.scheme, v) == 0 );
 		ss_iteratornext(&iter);
 		i++;
 		j++;
@@ -152,10 +152,10 @@ sv_writeiter_limit(void)
 	j = 0;
 	sv_writeiter_resume(&iter);
 	while (ss_iteratorhas(&iter)) {
-		sv *v = (sv*)ss_iteratorof(&iter);
-		t( *(int*)sv_key(v, &st_r.r, 0) == i );
-		t( sv_lsn(v) == 18 - i );
-		t( sv_flags(v) == 0 );
+		char *v = ss_iteratorof(&iter);
+		t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == i );
+		t( sf_lsn(st_r.r.scheme, v) == 18 - i );
+		t( sf_flags(st_r.r.scheme, v) == 0 );
 		ss_iteratornext(&iter);
 		i++;
 		j++;
@@ -166,9 +166,9 @@ sv_writeiter_limit(void)
 
 	sv_mergefree(&m, &st_r.a);
 
-	st_listfree(&vlista, &st_r.a);
-	st_listfree(&vlistb, &st_r.a);
-	sv_updatefree(&u, &st_r.r);
+	st_listfree(&vlista, &st_r.r);
+	st_listfree(&vlistb, &st_r.r);
+	sv_upsertfree(&u, &st_r.r);
 }
 
 static void
@@ -177,21 +177,21 @@ sv_writeiter_limit_small(void)
 
 	stlist vlista;
 	stlist vlistb;
-	st_listinit(&vlista, 0);
-	st_listinit(&vlistb, 0);
+	st_listinit(&vlista, ST_SVVRAW);
+	st_listinit(&vlistb, ST_SVVRAW);
 	int i = 0;
 	while (i < 18)
 	{
-		st_sv(&st_r.g, &vlista, 18 - i, 0, i);
+		st_svv(&st_r.g, &vlista, 18 - i, 0, i, NULL, 0);
 		i++;
 	}
 
 	ssiter ita;
 	ss_iterinit(ss_bufiterref, &ita);
-	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(svv*));
 	ssiter itb;
 	ss_iterinit(ss_bufiterref, &itb);
-	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(svv*));
 
 	svmerge m;
 	sv_mergeinit(&m);
@@ -206,19 +206,19 @@ sv_writeiter_limit_small(void)
 	ss_iterinit(sv_mergeiter, &merge);
 	ss_iteropen(sv_mergeiter, &merge, &st_r.r, &m, SS_GTE);
 
-	svupdate u;
-	sv_updateinit(&u);
+	svupsert u;
+	sv_upsertinit(&u);
 	ssiter iter;
 	ss_iterinit(sv_writeiter, &iter);
-	uint64_t limit = 1 * (sizeof(svv) + sizeof(sfref) + sizeof(i));
-	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 18ULL, 0, 0);
+	uint64_t limit = 1 * (sizeof(svv) + sizeof(sfvar) + sizeof(i));
+	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 0, 0, 18ULL);
 
 	i = 0;
 	while (ss_iteratorhas(&iter)) {
-		sv *v = (sv*)ss_iteratorof(&iter);
-		t( *(int*)sv_key(v, &st_r.r, 0) == i );
-		t( sv_lsn(v) == 18 - i );
-		t( sv_flags(v) == 0 );
+		char *v = ss_iteratorof(&iter);
+		t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == i );
+		t( sf_lsn(st_r.r.scheme, v) == 18 - i );
+		t( sf_flags(st_r.r.scheme, v) == 0 );
 		ss_iteratornext(&iter);
 		i++;
 	}
@@ -226,10 +226,10 @@ sv_writeiter_limit_small(void)
 	int j = 0;
 	sv_writeiter_resume(&iter);
 	while (ss_iteratorhas(&iter)) {
-		sv *v = (sv*)ss_iteratorof(&iter);
-		t( *(int*)sv_key(v, &st_r.r, 0) == i );
-		t( sv_lsn(v) == 18 - i );
-		t( sv_flags(v) == 0 );
+		char *v = ss_iteratorof(&iter);
+		t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == i );
+		t( sf_lsn(st_r.r.scheme, v) == 18 - i );
+		t( sf_flags(st_r.r.scheme, v) == 0 );
 		ss_iteratornext(&iter);
 		i++;
 		j++;
@@ -238,10 +238,10 @@ sv_writeiter_limit_small(void)
 	j = 0;
 	sv_writeiter_resume(&iter);
 	while (ss_iteratorhas(&iter)) {
-		sv *v = (sv*)ss_iteratorof(&iter);
-		t( *(int*)sv_key(v, &st_r.r, 0) == i );
-		t( sv_lsn(v) == 18 - i );
-		t( sv_flags(v) == 0 );
+		char *v = ss_iteratorof(&iter);
+		t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == i );
+		t( sf_lsn(st_r.r.scheme, v) == 18 - i );
+		t( sf_flags(st_r.r.scheme, v) == 0 );
 		ss_iteratornext(&iter);
 		i++;
 		j++;
@@ -250,10 +250,10 @@ sv_writeiter_limit_small(void)
 	j = 0;
 	sv_writeiter_resume(&iter);
 	while (ss_iteratorhas(&iter)) {
-		sv *v = (sv*)ss_iteratorof(&iter);
-		t( *(int*)sv_key(v, &st_r.r, 0) == i );
-		t( sv_lsn(v) == 18 - i );
-		t( sv_flags(v) == 0 );
+		char *v = ss_iteratorof(&iter);
+		t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == i );
+		t( sf_lsn(st_r.r.scheme, v) == 18 - i );
+		t( sf_flags(st_r.r.scheme, v) == 0 );
 		ss_iteratornext(&iter);
 		i++;
 		j++;
@@ -264,18 +264,18 @@ sv_writeiter_limit_small(void)
 
 	sv_mergefree(&m, &st_r.a);
 
-	st_listfree(&vlista, &st_r.a);
-	st_listfree(&vlistb, &st_r.a);
-	sv_updatefree(&u, &st_r.r);
+	st_listfree(&vlista, &st_r.r);
+	st_listfree(&vlistb, &st_r.r);
+	sv_upsertfree(&u, &st_r.r);
 }
 
 static void
 checkv(sr *r, ssiter *i, uint64_t lsn, int flags, int key)
 {
-	sv *v = (sv*)ss_iteratorof(i);
-	t( *(int*)sv_key(v, r, 0) == key );
-	t( sv_lsn(v) == lsn );
-	t( sv_flags(v) == flags );
+	char *v = ss_iteratorof(i);
+	t( *(int*)sf_field(r->scheme, 0, v, &st_r.size) == key );
+	t( sf_lsn(st_r.r.scheme, v) == lsn );
+	t( sf_flags(st_r.r.scheme, v) == flags );
 }
 
 static void
@@ -283,20 +283,20 @@ sv_writeiter_dup_lsn_gt(void)
 {
 	stlist vlista;
 	stlist vlistb;
-	st_listinit(&vlista, 0);
-	st_listinit(&vlistb, 0);
+	st_listinit(&vlista, ST_SVVRAW);
+	st_listinit(&vlistb, ST_SVVRAW);
 
 	int key = 7;
-	st_sv(&st_r.g, &vlista, 10, 0, key);
-	st_sv(&st_r.g, &vlista,  9, 0|SVDUP, key);
-	st_sv(&st_r.g, &vlista,  8, 0|SVDUP, key);
+	st_svv(&st_r.g, &vlista, 10, 0, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  9, 0|SVDUP, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  8, 0|SVDUP, key, NULL, 0);
 
 	ssiter ita;
 	ss_iterinit(ss_bufiterref, &ita);
-	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(svv*));
 	ssiter itb;
 	ss_iterinit(ss_bufiterref, &itb);
-	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(svv*));
 
 	svmerge m;
 	sv_mergeinit(&m);
@@ -311,23 +311,23 @@ sv_writeiter_dup_lsn_gt(void)
 	ss_iterinit(sv_mergeiter, &merge);
 	ss_iteropen(sv_mergeiter, &merge, &st_r.r, &m, SS_GTE);
 
-	svupdate u;
-	sv_updateinit(&u);
+	svupsert u;
+	sv_upsertinit(&u);
 	ssiter iter;
 	ss_iterinit(sv_writeiter, &iter);
 	uint64_t limit = 10 * (sizeof(svv) + sizeof(key));
-	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 10ULL, 0, 0);
+	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 0, 0, 10ULL);
 
 	int i = 0;
 	i = 0;
 	while (ss_iteratorhas(&iter)) {
-		sv *v = (sv*)ss_iteratorof(&iter);
-		t( *(int*)sv_key(v, &st_r.r, 0) == key );
-		t( sv_lsn(v) == 10 - i );
+		char *v = ss_iteratorof(&iter);
+		t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == key );
+		t( sf_lsn(st_r.r.scheme, v) == 10 - i );
 		if (i == 0)
-			t( sv_flags(v) == 0 );
+			t( sf_flags(st_r.r.scheme, v) == 0 );
 		else
-			t( sv_flags(v) == (0 | SVDUP) );
+			t( sf_flags(st_r.r.scheme, v) == (0 | SVDUP) );
 		ss_iteratornext(&iter);
 		i++;
 	}
@@ -336,9 +336,9 @@ sv_writeiter_dup_lsn_gt(void)
 
 	sv_mergefree(&m, &st_r.a);
 
-	st_listfree(&vlista, &st_r.a);
-	st_listfree(&vlistb, &st_r.a);
-	sv_updatefree(&u, &st_r.r);
+	st_listfree(&vlista, &st_r.r);
+	st_listfree(&vlistb, &st_r.r);
+	sv_upsertfree(&u, &st_r.r);
 }
 
 static void
@@ -346,21 +346,21 @@ sv_writeiter_dup_lsn_lt0(void)
 {
 	stlist vlista;
 	stlist vlistb;
-	st_listinit(&vlista, 0);
-	st_listinit(&vlistb, 0);
+	st_listinit(&vlista, ST_SVVRAW);
+	st_listinit(&vlistb, ST_SVVRAW);
 
 	int key = 7;
 
-	st_sv(&st_r.g, &vlista, 10, 0, key);
-	st_sv(&st_r.g, &vlista,  9, 0|SVDUP, key);
-	st_sv(&st_r.g, &vlista,  8, 0|SVDUP, key);
+	st_svv(&st_r.g, &vlista, 10, 0, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  9, 0|SVDUP, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  8, 0|SVDUP, key, NULL, 0);
 
 	ssiter ita;
 	ss_iterinit(ss_bufiterref, &ita);
-	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(svv*));
 	ssiter itb;
 	ss_iterinit(ss_bufiterref, &itb);
-	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(svv*));
 
 	svmerge m;
 	sv_mergeinit(&m);
@@ -375,23 +375,23 @@ sv_writeiter_dup_lsn_lt0(void)
 	ss_iterinit(sv_mergeiter, &merge);
 	ss_iteropen(sv_mergeiter, &merge, &st_r.r, &m, SS_GTE);
 
-	svupdate u;
-	sv_updateinit(&u);
+	svupsert u;
+	sv_upsertinit(&u);
 	ssiter iter;
 	ss_iterinit(sv_writeiter, &iter);
 	uint64_t limit = 10 * (sizeof(svv) + sizeof(key));
-	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 9ULL, 0, 0);
+	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 0, 0, 9ULL);
 
 	int i = 0;
 	i = 0;
 	while (ss_iteratorhas(&iter)) {
-		sv *v = (sv*)ss_iteratorof(&iter);
-		t( *(int*)sv_key(v, &st_r.r, 0) == key );
-		t( sv_lsn(v) == 10 - i );
+		char *v = ss_iteratorof(&iter);
+		t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == key );
+		t( sf_lsn(st_r.r.scheme, v) == 10 - i );
 		if (i == 0)
-			t( sv_flags(v) == 0 );
+			t( sf_flags(st_r.r.scheme, v) == 0 );
 		else
-			t( sv_flags(v) == (0 | SVDUP) );
+			t( sf_flags(st_r.r.scheme, v) == (0 | SVDUP) );
 		ss_iteratornext(&iter);
 		i++;
 	}
@@ -400,9 +400,9 @@ sv_writeiter_dup_lsn_lt0(void)
 
 	sv_mergefree(&m, &st_r.a);
 
-	st_listfree(&vlista, &st_r.a);
-	st_listfree(&vlistb, &st_r.a);
-	sv_updatefree(&u, &st_r.r);
+	st_listfree(&vlista, &st_r.r);
+	st_listfree(&vlistb, &st_r.r);
+	sv_upsertfree(&u, &st_r.r);
 }
 
 static void
@@ -410,21 +410,21 @@ sv_writeiter_dup_lsn_lt1(void)
 {
 	stlist vlista;
 	stlist vlistb;
-	st_listinit(&vlista, 0);
-	st_listinit(&vlistb, 0);
+	st_listinit(&vlista, ST_SVVRAW);
+	st_listinit(&vlistb, ST_SVVRAW);
 
 	int key = 7;
 
-	st_sv(&st_r.g, &vlista, 10, 0, key);
-	st_sv(&st_r.g, &vlista,  9, 0|SVDUP, key);
-	st_sv(&st_r.g, &vlista,  8, 0|SVDUP, key);
+	st_svv(&st_r.g, &vlista, 10, 0, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  9, 0|SVDUP, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  8, 0|SVDUP, key, NULL, 0);
 
 	ssiter ita;
 	ss_iterinit(ss_bufiterref, &ita);
-	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(svv*));
 	ssiter itb;
 	ss_iterinit(ss_bufiterref, &itb);
-	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(svv*));
 
 	svmerge m;
 	sv_mergeinit(&m);
@@ -439,23 +439,23 @@ sv_writeiter_dup_lsn_lt1(void)
 	ss_iterinit(sv_mergeiter, &merge);
 	ss_iteropen(sv_mergeiter, &merge, &st_r.r, &m, SS_GTE);
 
-	svupdate u;
-	sv_updateinit(&u);
+	svupsert u;
+	sv_upsertinit(&u);
 	ssiter iter;
 	ss_iterinit(sv_writeiter, &iter);
 	uint64_t limit = 10 * (sizeof(svv) + sizeof(key));
-	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 8ULL, 0, 0);
+	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 0, 0, 8ULL);
 
 	int i = 0;
 	i = 0;
 	while (ss_iteratorhas(&iter)) {
-		sv *v = (sv*)ss_iteratorof(&iter);
-		t( *(int*)sv_key(v, &st_r.r, 0) == key );
-		t( sv_lsn(v) == 10 - i );
+		char *v = ss_iteratorof(&iter);
+		t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == key );
+		t( sf_lsn(st_r.r.scheme, v) == 10 - i );
 		if (i == 0)
-			t( sv_flags(v) == 0 );
+			t( sf_flags(st_r.r.scheme, v) == 0 );
 		else
-			t( sv_flags(v) == (0 | SVDUP) );
+			t( sf_flags(st_r.r.scheme, v) == (0 | SVDUP) );
 		ss_iteratornext(&iter);
 		i++;
 	}
@@ -464,9 +464,9 @@ sv_writeiter_dup_lsn_lt1(void)
 
 	sv_mergefree(&m, &st_r.a);
 
-	st_listfree(&vlista, &st_r.a);
-	st_listfree(&vlistb, &st_r.a);
-	sv_updatefree(&u, &st_r.r);
+	st_listfree(&vlista, &st_r.r);
+	st_listfree(&vlistb, &st_r.r);
+	sv_upsertfree(&u, &st_r.r);
 }
 
 static void
@@ -474,21 +474,21 @@ sv_writeiter_dup_lsn_lt2(void)
 {
 	stlist vlista;
 	stlist vlistb;
-	st_listinit(&vlista, 0);
-	st_listinit(&vlistb, 0);
+	st_listinit(&vlista, ST_SVVRAW);
+	st_listinit(&vlistb, ST_SVVRAW);
 
 	int key = 7;
 
-	st_sv(&st_r.g, &vlista, 10, 0, key);
-	st_sv(&st_r.g, &vlista,  9, 0|SVDUP, key);
-	st_sv(&st_r.g, &vlista,  8, 0|SVDUP, key);
+	st_svv(&st_r.g, &vlista, 10, 0, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  9, 0|SVDUP, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  8, 0|SVDUP, key, NULL, 0);
 
 	ssiter ita;
 	ss_iterinit(ss_bufiterref, &ita);
-	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(svv*));
 	ssiter itb;
 	ss_iterinit(ss_bufiterref, &itb);
-	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(svv*));
 
 	svmerge m;
 	sv_mergeinit(&m);
@@ -503,23 +503,23 @@ sv_writeiter_dup_lsn_lt2(void)
 	ss_iterinit(sv_mergeiter, &merge);
 	ss_iteropen(sv_mergeiter, &merge, &st_r.r, &m, SS_GTE);
 
-	svupdate u;
-	sv_updateinit(&u);
+	svupsert u;
+	sv_upsertinit(&u);
 	ssiter iter;
 	ss_iterinit(sv_writeiter, &iter);
 	uint64_t limit = 10 * (sizeof(svv) + sizeof(key));
-	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 2ULL, 0, 0);
+	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 0, 0, 2ULL);
 
 	int i = 0;
 	i = 0;
 	while (ss_iteratorhas(&iter)) {
-		sv *v = (sv*)ss_iteratorof(&iter);
-		t( *(int*)sv_key(v, &st_r.r, 0) == key );
-		t( sv_lsn(v) == 10 - i );
+		char *v = ss_iteratorof(&iter);
+		t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == key );
+		t( sf_lsn(st_r.r.scheme, v) == 10 - i );
 		if (i == 0)
-			t( sv_flags(v) == 0 );
+			t( sf_flags(st_r.r.scheme, v) == 0 );
 		else
-			t( sv_flags(v) == (0 | SVDUP) );
+			t( sf_flags(st_r.r.scheme, v) == (0 | SVDUP) );
 		ss_iteratornext(&iter);
 		i++;
 	}
@@ -528,9 +528,9 @@ sv_writeiter_dup_lsn_lt2(void)
 
 	sv_mergefree(&m, &st_r.a);
 
-	st_listfree(&vlista, &st_r.a);
-	st_listfree(&vlistb, &st_r.a);
-	sv_updatefree(&u, &st_r.r);
+	st_listfree(&vlista, &st_r.r);
+	st_listfree(&vlistb, &st_r.r);
+	sv_upsertfree(&u, &st_r.r);
 }
 
 static void
@@ -538,28 +538,28 @@ sv_writeiter_dup_lsn_gt_chain(void)
 {
 	stlist vlista;
 	stlist vlistb;
-	st_listinit(&vlista, 0);
-	st_listinit(&vlistb, 0);
+	st_listinit(&vlista, ST_SVVRAW);
+	st_listinit(&vlistb, ST_SVVRAW);
 
 	int key = 7;
 	int key2 = 8;
 	int key3 = 9;
 	int key4 = 10;
 
-	st_sv(&st_r.g, &vlista, 10, 0, key);
-	st_sv(&st_r.g, &vlista,  9, 0|SVDUP, key);
-	st_sv(&st_r.g, &vlista,  8, 0|SVDUP, key);
-	st_sv(&st_r.g, &vlista, 12, 0, key2);
-	st_sv(&st_r.g, &vlista, 11, 0|SVDUP, key2);
-	st_sv(&st_r.g, &vlista, 13, 0, key3);
-	st_sv(&st_r.g, &vlista, 14, 0, key4);
+	st_svv(&st_r.g, &vlista, 10, 0, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  9, 0|SVDUP, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  8, 0|SVDUP, key, NULL, 0);
+	st_svv(&st_r.g, &vlista, 12, 0, key2, NULL, 0);
+	st_svv(&st_r.g, &vlista, 11, 0|SVDUP, key2, NULL, 0);
+	st_svv(&st_r.g, &vlista, 13, 0, key3, NULL, 0);
+	st_svv(&st_r.g, &vlista, 14, 0, key4, NULL, 0);
 
 	ssiter ita;
 	ss_iterinit(ss_bufiterref, &ita);
-	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(svv*));
 	ssiter itb;
 	ss_iterinit(ss_bufiterref, &itb);
-	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(svv*));
 
 	svmerge m;
 	sv_mergeinit(&m);
@@ -574,12 +574,12 @@ sv_writeiter_dup_lsn_gt_chain(void)
 	ss_iterinit(sv_mergeiter, &merge);
 	ss_iteropen(sv_mergeiter, &merge, &st_r.r, &m, SS_GTE);
 
-	svupdate u;
-	sv_updateinit(&u);
+	svupsert u;
+	sv_upsertinit(&u);
 	ssiter iter;
 	ss_iterinit(sv_writeiter, &iter);
 	uint64_t limit = 10 * (sizeof(svv) + sizeof(key));
-	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 15ULL, 0, 0);
+	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 0, 0, 15ULL);
 
 	checkv(&st_r.r, &iter, 10, 0, key);
 	ss_iteratornext(&iter);
@@ -593,9 +593,9 @@ sv_writeiter_dup_lsn_gt_chain(void)
 
 	sv_mergefree(&m, &st_r.a);
 
-	st_listfree(&vlista, &st_r.a);
-	st_listfree(&vlistb, &st_r.a);
-	sv_updatefree(&u, &st_r.r);
+	st_listfree(&vlista, &st_r.r);
+	st_listfree(&vlistb, &st_r.r);
+	sv_upsertfree(&u, &st_r.r);
 }
 
 static void
@@ -603,28 +603,28 @@ sv_writeiter_dup_lsn_lt0_chain(void)
 {
 	stlist vlista;
 	stlist vlistb;
-	st_listinit(&vlista, 0);
-	st_listinit(&vlistb, 0);
+	st_listinit(&vlista, ST_SVVRAW);
+	st_listinit(&vlistb, ST_SVVRAW);
 
 	int key = 7;
 	int key2 = 8;
 	int key3 = 9;
 	int key4 = 10;
 
-	st_sv(&st_r.g, &vlista, 10, 0, key);
-	st_sv(&st_r.g, &vlista,  9, 0|SVDUP, key);
-	st_sv(&st_r.g, &vlista,  8, 0|SVDUP, key);
-	st_sv(&st_r.g, &vlista, 12, 0, key2);
-	st_sv(&st_r.g, &vlista, 11, 0|SVDUP, key2);
-	st_sv(&st_r.g, &vlista, 13, 0, key3);
-	st_sv(&st_r.g, &vlista, 14, 0, key4);
+	st_svv(&st_r.g, &vlista, 10, 0, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  9, 0|SVDUP, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  8, 0|SVDUP, key, NULL, 0);
+	st_svv(&st_r.g, &vlista, 12, 0, key2, NULL, 0);
+	st_svv(&st_r.g, &vlista, 11, 0|SVDUP, key2, NULL, 0);
+	st_svv(&st_r.g, &vlista, 13, 0, key3, NULL, 0);
+	st_svv(&st_r.g, &vlista, 14, 0, key4, NULL, 0);
 
 	ssiter ita;
 	ss_iterinit(ss_bufiterref, &ita);
-	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(svv*));
 	ssiter itb;
 	ss_iterinit(ss_bufiterref, &itb);
-	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(svv*));
 
 	svmerge m;
 	sv_mergeinit(&m);
@@ -639,12 +639,12 @@ sv_writeiter_dup_lsn_lt0_chain(void)
 	ss_iterinit(sv_mergeiter, &merge);
 	ss_iteropen(sv_mergeiter, &merge, &st_r.r, &m, SS_GTE);
 
-	svupdate u;
-	sv_updateinit(&u);
+	svupsert u;
+	sv_upsertinit(&u);
 	ssiter iter;
 	ss_iterinit(sv_writeiter, &iter);
 	uint64_t limit = 10 * (sizeof(svv) + sizeof(key));
-	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 11ULL, 0, 0);
+	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 0, 0, 11ULL);
 
 	checkv(&st_r.r, &iter, 10, 0, key);
 	ss_iteratornext(&iter);
@@ -660,9 +660,9 @@ sv_writeiter_dup_lsn_lt0_chain(void)
 
 	sv_mergefree(&m, &st_r.a);
 
-	st_listfree(&vlista, &st_r.a);
-	st_listfree(&vlistb, &st_r.a);
-	sv_updatefree(&u, &st_r.r);
+	st_listfree(&vlista, &st_r.r);
+	st_listfree(&vlistb, &st_r.r);
+	sv_upsertfree(&u, &st_r.r);
 }
 
 static void
@@ -670,28 +670,28 @@ sv_writeiter_dup_lsn_lt1_chain(void)
 {
 	stlist vlista;
 	stlist vlistb;
-	st_listinit(&vlista, 0);
-	st_listinit(&vlistb, 0);
+	st_listinit(&vlista, ST_SVVRAW);
+	st_listinit(&vlistb, ST_SVVRAW);
 
 	int key = 7;
 	int key2 = 8;
 	int key3 = 9;
 	int key4 = 10;
 
-	st_sv(&st_r.g, &vlista, 10, 0, key);
-	st_sv(&st_r.g, &vlista,  9, 0|SVDUP, key);
-	st_sv(&st_r.g, &vlista,  8, 0|SVDUP, key);
-	st_sv(&st_r.g, &vlista, 12, 0, key2);
-	st_sv(&st_r.g, &vlista, 11, 0|SVDUP, key2);
-	st_sv(&st_r.g, &vlista, 13, 0, key3);
-	st_sv(&st_r.g, &vlista, 14, 0, key4);
+	st_svv(&st_r.g, &vlista, 10, 0, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  9, 0|SVDUP, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  8, 0|SVDUP, key, NULL, 0);
+	st_svv(&st_r.g, &vlista, 12, 0, key2, NULL, 0);
+	st_svv(&st_r.g, &vlista, 11, 0|SVDUP, key2, NULL, 0);
+	st_svv(&st_r.g, &vlista, 13, 0, key3, NULL, 0);
+	st_svv(&st_r.g, &vlista, 14, 0, key4, NULL, 0);
 
 	ssiter ita;
 	ss_iterinit(ss_bufiterref, &ita);
-	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(svv*));
 	ssiter itb;
 	ss_iterinit(ss_bufiterref, &itb);
-	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(svv*));
 
 	svmerge m;
 	sv_mergeinit(&m);
@@ -706,12 +706,12 @@ sv_writeiter_dup_lsn_lt1_chain(void)
 	ss_iterinit(sv_mergeiter, &merge);
 	ss_iteropen(sv_mergeiter, &merge, &st_r.r, &m, SS_GTE);
 
-	svupdate u;
-	sv_updateinit(&u);
+	svupsert u;
+	sv_upsertinit(&u);
 	ssiter iter;
 	ss_iterinit(sv_writeiter, &iter);
 	uint64_t limit = 10 * (sizeof(svv) + sizeof(key));
-	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 9ULL, 0, 0);
+	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 0, 0, 9ULL);
 
 	checkv(&st_r.r, &iter, 10, 0, key);
 	ss_iteratornext(&iter);
@@ -729,9 +729,9 @@ sv_writeiter_dup_lsn_lt1_chain(void)
 
 	sv_mergefree(&m, &st_r.a);
 
-	st_listfree(&vlista, &st_r.a);
-	st_listfree(&vlistb, &st_r.a);
-	sv_updatefree(&u, &st_r.r);
+	st_listfree(&vlista, &st_r.r);
+	st_listfree(&vlistb, &st_r.r);
+	sv_upsertfree(&u, &st_r.r);
 }
 
 static void
@@ -739,28 +739,28 @@ sv_writeiter_dup_lsn_lt2_chain(void)
 {
 	stlist vlista;
 	stlist vlistb;
-	st_listinit(&vlista, 0);
-	st_listinit(&vlistb, 0);
+	st_listinit(&vlista, ST_SVVRAW);
+	st_listinit(&vlistb, ST_SVVRAW);
 
 	int key = 7;
 	int key2 = 8;
 	int key3 = 9;
 	int key4 = 10;
 
-	st_sv(&st_r.g, &vlista, 10, 0, key);
-	st_sv(&st_r.g, &vlista,  9, 0|SVDUP, key);
-	st_sv(&st_r.g, &vlista,  8, 0|SVDUP, key);
-	st_sv(&st_r.g, &vlista, 12, 0, key2);
-	st_sv(&st_r.g, &vlista, 11, 0|SVDUP, key2);
-	st_sv(&st_r.g, &vlista, 13, 0, key3);
-	st_sv(&st_r.g, &vlista, 14, 0, key4);
+	st_svv(&st_r.g, &vlista, 10, 0, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  9, 0|SVDUP, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  8, 0|SVDUP, key, NULL, 0);
+	st_svv(&st_r.g, &vlista, 12, 0, key2, NULL, 0);
+	st_svv(&st_r.g, &vlista, 11, 0|SVDUP, key2, NULL, 0);
+	st_svv(&st_r.g, &vlista, 13, 0, key3, NULL, 0);
+	st_svv(&st_r.g, &vlista, 14, 0, key4, NULL, 0);
 
 	ssiter ita;
 	ss_iterinit(ss_bufiterref, &ita);
-	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(svv*));
 	ssiter itb;
 	ss_iterinit(ss_bufiterref, &itb);
-	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(svv*));
 
 	svmerge m;
 	sv_mergeinit(&m);
@@ -775,12 +775,12 @@ sv_writeiter_dup_lsn_lt2_chain(void)
 	ss_iterinit(sv_mergeiter, &merge);
 	ss_iteropen(sv_mergeiter, &merge, &st_r.r, &m, SS_GTE);
 
-	svupdate u;
-	sv_updateinit(&u);
+	svupsert u;
+	sv_upsertinit(&u);
 	ssiter iter;
 	ss_iterinit(sv_writeiter, &iter);
 	uint64_t limit = 10 * (sizeof(svv) + sizeof(key));
-	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 3ULL, 0, 0);
+	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 0, 0, 3ULL);
 
 	checkv(&st_r.r, &iter, 10, 0, key);
 	ss_iteratornext(&iter);
@@ -800,9 +800,9 @@ sv_writeiter_dup_lsn_lt2_chain(void)
 
 	sv_mergefree(&m, &st_r.a);
 
-	st_listfree(&vlista, &st_r.a);
-	st_listfree(&vlistb, &st_r.a);
-	sv_updatefree(&u, &st_r.r);
+	st_listfree(&vlista, &st_r.r);
+	st_listfree(&vlistb, &st_r.r);
+	sv_upsertfree(&u, &st_r.r);
 }
 
 static void
@@ -810,21 +810,21 @@ sv_writeiter_dup_lsn_limit0(void)
 {
 	stlist vlista;
 	stlist vlistb;
-	st_listinit(&vlista, 0);
-	st_listinit(&vlistb, 0);
+	st_listinit(&vlista, ST_SVVRAW);
+	st_listinit(&vlistb, ST_SVVRAW);
 
 	int key = 7;
 
-	st_sv(&st_r.g, &vlista, 10, 0, key);
-	st_sv(&st_r.g, &vlista,  9, 0|SVDUP, key);
-	st_sv(&st_r.g, &vlista,  8, 0|SVDUP, key);
+	st_svv(&st_r.g, &vlista, 10, 0, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  9, 0|SVDUP, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  8, 0|SVDUP, key, NULL, 0);
 
 	ssiter ita;
 	ss_iterinit(ss_bufiterref, &ita);
-	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(svv*));
 	ssiter itb;
 	ss_iterinit(ss_bufiterref, &itb);
-	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(svv*));
 
 	svmerge m;
 	sv_mergeinit(&m);
@@ -839,12 +839,12 @@ sv_writeiter_dup_lsn_limit0(void)
 	ss_iterinit(sv_mergeiter, &merge);
 	ss_iteropen(sv_mergeiter, &merge, &st_r.r, &m, SS_GTE);
 
-	svupdate u;
-	sv_updateinit(&u);
+	svupsert u;
+	sv_upsertinit(&u);
 	ssiter iter;
 	ss_iterinit(sv_writeiter, &iter);
 	uint64_t limit = 1 * (sizeof(svv) + sizeof(key));
-	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 15ULL, 0, 0);
+	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 0, 0, 15ULL);
 
 	checkv(&st_r.r, &iter, 10, 0, key);
 	ss_iteratornext(&iter);
@@ -853,9 +853,9 @@ sv_writeiter_dup_lsn_limit0(void)
 
 	sv_mergefree(&m, &st_r.a);
 
-	st_listfree(&vlista, &st_r.a);
-	st_listfree(&vlistb, &st_r.a);
-	sv_updatefree(&u, &st_r.r);
+	st_listfree(&vlista, &st_r.r);
+	st_listfree(&vlistb, &st_r.r);
+	sv_upsertfree(&u, &st_r.r);
 }
 
 static void
@@ -863,21 +863,21 @@ sv_writeiter_dup_lsn_limit1(void)
 {
 	stlist vlista;
 	stlist vlistb;
-	st_listinit(&vlista, 0);
-	st_listinit(&vlistb, 0);
+	st_listinit(&vlista, ST_SVVRAW);
+	st_listinit(&vlistb, ST_SVVRAW);
 
 	int key = 7;
 
-	st_sv(&st_r.g, &vlista, 10, 0, key);
-	st_sv(&st_r.g, &vlista,  9, 0|SVDUP, key);
-	st_sv(&st_r.g, &vlista,  8, 0|SVDUP, key);
+	st_svv(&st_r.g, &vlista, 10, 0, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  9, 0|SVDUP, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  8, 0|SVDUP, key, NULL, 0);
 
 	ssiter ita;
 	ss_iterinit(ss_bufiterref, &ita);
-	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(svv*));
 	ssiter itb;
 	ss_iterinit(ss_bufiterref, &itb);
-	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(svv*));
 
 	svmerge m;
 	sv_mergeinit(&m);
@@ -892,12 +892,12 @@ sv_writeiter_dup_lsn_limit1(void)
 	ss_iterinit(sv_mergeiter, &merge);
 	ss_iteropen(sv_mergeiter, &merge, &st_r.r, &m, SS_GTE);
 
-	svupdate u;
-	sv_updateinit(&u);
+	svupsert u;
+	sv_upsertinit(&u);
 	ssiter iter;
 	ss_iterinit(sv_writeiter, &iter);
 	uint64_t limit = 1 * (sizeof(svv) + sizeof(key));
-	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 9ULL, 0, 0);
+	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 0, 0, 9ULL);
 
 	checkv(&st_r.r, &iter, 10, 0, key);
 	ss_iteratornext(&iter);
@@ -908,9 +908,9 @@ sv_writeiter_dup_lsn_limit1(void)
 
 	sv_mergefree(&m, &st_r.a);
 
-	st_listfree(&vlista, &st_r.a);
-	st_listfree(&vlistb, &st_r.a);
-	sv_updatefree(&u, &st_r.r);
+	st_listfree(&vlista, &st_r.r);
+	st_listfree(&vlistb, &st_r.r);
+	sv_upsertfree(&u, &st_r.r);
 }
 
 static void
@@ -918,20 +918,20 @@ sv_writeiter_dup_lsn_limit2(void)
 {
 	stlist vlista;
 	stlist vlistb;
-	st_listinit(&vlista, 0);
-	st_listinit(&vlistb, 0);
+	st_listinit(&vlista, ST_SVVRAW);
+	st_listinit(&vlistb, ST_SVVRAW);
 
 	int key = 7;
-	st_sv(&st_r.g, &vlista, 10, 0, key);
-	st_sv(&st_r.g, &vlista,  9, 0|SVDUP, key);
-	st_sv(&st_r.g, &vlista,  8, 0|SVDUP, key);
+	st_svv(&st_r.g, &vlista, 10, 0, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  9, 0|SVDUP, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  8, 0|SVDUP, key, NULL, 0);
 
 	ssiter ita;
 	ss_iterinit(ss_bufiterref, &ita);
-	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(svv*));
 	ssiter itb;
 	ss_iterinit(ss_bufiterref, &itb);
-	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(svv*));
 
 	svmerge m;
 	sv_mergeinit(&m);
@@ -946,12 +946,12 @@ sv_writeiter_dup_lsn_limit2(void)
 	ss_iterinit(sv_mergeiter, &merge);
 	ss_iteropen(sv_mergeiter, &merge, &st_r.r, &m, SS_GTE);
 
-	svupdate u;
-	sv_updateinit(&u);
+	svupsert u;
+	sv_upsertinit(&u);
 	ssiter iter;
 	ss_iterinit(sv_writeiter, &iter);
 	uint64_t limit = 1 * (sizeof(svv) + sizeof(key));
-	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 5ULL, 0, 0);
+	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 0, 0, 5ULL);
 
 	checkv(&st_r.r, &iter, 10, 0, key);
 	ss_iteratornext(&iter);
@@ -964,9 +964,9 @@ sv_writeiter_dup_lsn_limit2(void)
 
 	sv_mergefree(&m, &st_r.a);
 
-	st_listfree(&vlista, &st_r.a);
-	st_listfree(&vlistb, &st_r.a);
-	sv_updatefree(&u, &st_r.r);
+	st_listfree(&vlista, &st_r.r);
+	st_listfree(&vlistb, &st_r.r);
+	sv_upsertfree(&u, &st_r.r);
 }
 
 static void
@@ -974,22 +974,22 @@ sv_writeiter_dup_lsn_limit3(void)
 {
 	stlist vlista;
 	stlist vlistb;
-	st_listinit(&vlista, 0);
-	st_listinit(&vlistb, 0);
+	st_listinit(&vlista, ST_SVVRAW);
+	st_listinit(&vlistb, ST_SVVRAW);
 
 	int k = 0;
 	int key = 7;
-	st_sv(&st_r.g, &vlista, 412 - k, 0, key);
+	st_svv(&st_r.g, &vlista, 412 - k, 0, key, NULL, 0);
 	while (k < 411) {
-		st_sv(&st_r.g, &vlista, 411 - k, 0|SVDUP, key);
+		st_svv(&st_r.g, &vlista, 411 - k, 0|SVDUP, key, NULL, 0);
 		k++;
 	}
 	ssiter ita;
 	ss_iterinit(ss_bufiterref, &ita);
-	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(svv*));
 	ssiter itb;
 	ss_iterinit(ss_bufiterref, &itb);
-	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(svv*));
 
 	svmerge m;
 	sv_mergeinit(&m);
@@ -1004,12 +1004,12 @@ sv_writeiter_dup_lsn_limit3(void)
 	ss_iterinit(sv_mergeiter, &merge);
 	ss_iteropen(sv_mergeiter, &merge, &st_r.r, &m, SS_GTE);
 
-	svupdate u;
-	sv_updateinit(&u);
+	svupsert u;
+	sv_upsertinit(&u);
 	ssiter iter;
 	ss_iterinit(sv_writeiter, &iter);
 	uint64_t limit = 2 * (sizeof(svv) + sizeof(key));
-	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 500ULL, 0, 0);
+	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 0, 0, 500ULL);
 
 	t(ss_iteratorhas(&iter) == 1);
 	checkv(&st_r.r, &iter, 412, 0, key);
@@ -1019,9 +1019,9 @@ sv_writeiter_dup_lsn_limit3(void)
 
 	sv_mergefree(&m, &st_r.a);
 
-	st_listfree(&vlista, &st_r.a);
-	st_listfree(&vlistb, &st_r.a);
-	sv_updatefree(&u, &st_r.r);
+	st_listfree(&vlista, &st_r.r);
+	st_listfree(&vlistb, &st_r.r);
+	sv_upsertfree(&u, &st_r.r);
 }
 
 static void
@@ -1029,22 +1029,22 @@ sv_writeiter_dup_lsn_limit4(void)
 {
 	stlist vlista;
 	stlist vlistb;
-	st_listinit(&vlista, 0);
-	st_listinit(&vlistb, 0);
+	st_listinit(&vlista, ST_SVVRAW);
+	st_listinit(&vlistb, ST_SVVRAW);
 
 	int k = 0;
 	int key = 7;
-	st_sv(&st_r.g, &vlista, 412 - k, 0, key);
+	st_svv(&st_r.g, &vlista, 412 - k, 0, key, NULL, 0);
 	while (k < 411) {
-		st_sv(&st_r.g, &vlista, 411 - k, 0|SVDUP, key);
+		st_svv(&st_r.g, &vlista, 411 - k, 0|SVDUP, key, NULL, 0);
 		k++;
 	}
 	ssiter ita;
 	ss_iterinit(ss_bufiterref, &ita);
-	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(svv*));
 	ssiter itb;
 	ss_iterinit(ss_bufiterref, &itb);
-	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(svv*));
 
 	svmerge m;
 	sv_mergeinit(&m);
@@ -1059,12 +1059,12 @@ sv_writeiter_dup_lsn_limit4(void)
 	ss_iterinit(sv_mergeiter, &merge);
 	ss_iteropen(sv_mergeiter, &merge, &st_r.r, &m, SS_GTE);
 
-	svupdate u;
-	sv_updateinit(&u);
+	svupsert u;
+	sv_upsertinit(&u);
 	ssiter iter;
 	ss_iterinit(sv_writeiter, &iter);
 	uint64_t limit = 1 * (sizeof(svv) + sizeof(k));
-	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 0ULL, 0, 0);
+	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 0, 0, 0ULL);
 
 	k = 0;
 	while (ss_iteratorhas(&iter))
@@ -1081,9 +1081,9 @@ sv_writeiter_dup_lsn_limit4(void)
 
 	sv_mergefree(&m, &st_r.a);
 
-	st_listfree(&vlista, &st_r.a);
-	st_listfree(&vlistb, &st_r.a);
-	sv_updatefree(&u, &st_r.r);
+	st_listfree(&vlista, &st_r.r);
+	st_listfree(&vlistb, &st_r.r);
+	sv_upsertfree(&u, &st_r.r);
 }
 
 static void
@@ -1091,22 +1091,22 @@ sv_writeiter_dup_lsn_limit5(void)
 {
 	stlist vlista;
 	stlist vlistb;
-	st_listinit(&vlista, 0);
-	st_listinit(&vlistb, 0);
+	st_listinit(&vlista, ST_SVVRAW);
+	st_listinit(&vlistb, ST_SVVRAW);
 
 	int k = 0;
 	int key = 7;
-	st_sv(&st_r.g, &vlista, 412 - k, 0, key);
+	st_svv(&st_r.g, &vlista, 412 - k, 0, key, NULL, 0);
 	while (k < 411) {
-		st_sv(&st_r.g, &vlista, 411 - k, 0|SVDUP, key);
+		st_svv(&st_r.g, &vlista, 411 - k, 0|SVDUP, key, NULL, 0);
 		k++;
 	}
 	ssiter ita;
 	ss_iterinit(ss_bufiterref, &ita);
-	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(svv*));
 	ssiter itb;
 	ss_iterinit(ss_bufiterref, &itb);
-	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(svv*));
 
 	svmerge m;
 	sv_mergeinit(&m);
@@ -1121,12 +1121,12 @@ sv_writeiter_dup_lsn_limit5(void)
 	ss_iterinit(sv_mergeiter, &merge);
 	ss_iteropen(sv_mergeiter, &merge, &st_r.r, &m, SS_GTE);
 
-	svupdate u;
-	sv_updateinit(&u);
+	svupsert u;
+	sv_upsertinit(&u);
 	ssiter iter;
 	ss_iterinit(sv_writeiter, &iter);
 	uint64_t limit = 1 * (sizeof(svv) + sizeof(k));
-	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 0ULL, 0, 0);
+	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 0, 0, 0ULL);
 
 	k = 0;
 	while (ss_iteratorhas(&iter))
@@ -1143,9 +1143,9 @@ sv_writeiter_dup_lsn_limit5(void)
 
 	sv_mergefree(&m, &st_r.a);
 
-	st_listfree(&vlista, &st_r.a);
-	st_listfree(&vlistb, &st_r.a);
-	sv_updatefree(&u, &st_r.r);
+	st_listfree(&vlista, &st_r.r);
+	st_listfree(&vlistb, &st_r.r);
+	sv_upsertfree(&u, &st_r.r);
 }
 
 static void
@@ -1153,21 +1153,21 @@ sv_writeiter_delete0(void)
 {
 	stlist vlista;
 	stlist vlistb;
-	st_listinit(&vlista, 0);
-	st_listinit(&vlistb, 0);
+	st_listinit(&vlista, ST_SVVRAW);
+	st_listinit(&vlistb, ST_SVVRAW);
 
 	int key = 7;
 
-	st_sv(&st_r.g, &vlista, 10, 0, key);
-	st_sv(&st_r.g, &vlista,  9, SVDELETE|SVDUP, key);
-	st_sv(&st_r.g, &vlista,  8, SVDELETE|SVDUP, key);
+	st_svv(&st_r.g, &vlista, 10, 0, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  9, SVDELETE|SVDUP, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  8, SVDELETE|SVDUP, key, NULL, 0);
 
 	ssiter ita;
 	ss_iterinit(ss_bufiterref, &ita);
-	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(svv*));
 	ssiter itb;
 	ss_iterinit(ss_bufiterref, &itb);
-	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(svv*));
 
 	svmerge m;
 	sv_mergeinit(&m);
@@ -1182,23 +1182,23 @@ sv_writeiter_delete0(void)
 	ss_iterinit(sv_mergeiter, &merge);
 	ss_iteropen(sv_mergeiter, &merge, &st_r.r, &m, SS_GTE);
 
-	svupdate u;
-	sv_updateinit(&u);
+	svupsert u;
+	sv_upsertinit(&u);
 	ssiter iter;
 	ss_iterinit(sv_writeiter, &iter);
 	uint64_t limit = 10 * (sizeof(svv) + sizeof(key));
-	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 10ULL, 0, 0);
+	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 0, 0, 10ULL);
 
 	int i = 0;
 	i = 0;
 	while (ss_iteratorhas(&iter)) {
-		sv *v = (sv*)ss_iteratorof(&iter);
-		t( *(int*)sv_key(v, &st_r.r, 0) == key );
-		t( sv_lsn(v) == 10 - i );
+		char *v = ss_iteratorof(&iter);
+		t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == key );
+		t( sf_lsn(st_r.r.scheme, v) == 10 - i );
 		if (i == 0)
-			t( sv_flags(v) == 0 );
+			t( sf_flags(st_r.r.scheme, v) == 0 );
 		else
-			t( sv_flags(v) == (SVDELETE | SVDUP) );
+			t( sf_flags(st_r.r.scheme, v) == (SVDELETE | SVDUP) );
 		ss_iteratornext(&iter);
 		i++;
 	}
@@ -1207,9 +1207,9 @@ sv_writeiter_delete0(void)
 
 	sv_mergefree(&m, &st_r.a);
 
-	st_listfree(&vlista, &st_r.a);
-	st_listfree(&vlistb, &st_r.a);
-	sv_updatefree(&u, &st_r.r);
+	st_listfree(&vlista, &st_r.r);
+	st_listfree(&vlistb, &st_r.r);
+	sv_upsertfree(&u, &st_r.r);
 }
 
 static void
@@ -1217,21 +1217,21 @@ sv_writeiter_delete1(void)
 {
 	stlist vlista;
 	stlist vlistb;
-	st_listinit(&vlista, 0);
-	st_listinit(&vlistb, 0);
+	st_listinit(&vlista, ST_SVVRAW);
+	st_listinit(&vlistb, ST_SVVRAW);
 
 	int key = 7;
 
-	st_sv(&st_r.g, &vlista, 10, 0, key);
-	st_sv(&st_r.g, &vlista,  9, SVDELETE|SVDUP, key);
-	st_sv(&st_r.g, &vlista,  8, SVDELETE|SVDUP, key);
+	st_svv(&st_r.g, &vlista, 10, 0, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  9, SVDELETE|SVDUP, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  8, SVDELETE|SVDUP, key, NULL, 0);
 
 	ssiter ita;
 	ss_iterinit(ss_bufiterref, &ita);
-	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(svv*));
 	ssiter itb;
 	ss_iterinit(ss_bufiterref, &itb);
-	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(svv*));
 
 	svmerge m;
 	sv_mergeinit(&m);
@@ -1246,23 +1246,23 @@ sv_writeiter_delete1(void)
 	ss_iterinit(sv_mergeiter, &merge);
 	ss_iteropen(sv_mergeiter, &merge, &st_r.r, &m, SS_GTE);
 
-	svupdate u;
-	sv_updateinit(&u);
+	svupsert u;
+	sv_upsertinit(&u);
 	ssiter iter;
 	ss_iterinit(sv_writeiter, &iter);
 	uint64_t limit = 10 * (sizeof(svv) + sizeof(key));
-	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 9ULL, 0, 0);
+	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 0, 0, 9ULL);
 
 	int i = 0;
 	i = 0;
 	while (ss_iteratorhas(&iter)) {
-		sv *v = (sv*)ss_iteratorof(&iter);
-		t( *(int*)sv_key(v, &st_r.r, 0) == key );
-		t( sv_lsn(v) == 10 - i );
+		char *v = ss_iteratorof(&iter);
+		t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == key );
+		t( sf_lsn(st_r.r.scheme, v) == 10 - i );
 		if (i == 0)
-			t( sv_flags(v) == 0 );
+			t( sf_flags(st_r.r.scheme, v) == 0 );
 		else
-			t( sv_flags(v) == (SVDELETE | SVDUP) );
+			t( sf_flags(st_r.r.scheme, v) == (SVDELETE | SVDUP) );
 		ss_iteratornext(&iter);
 		i++;
 	}
@@ -1271,9 +1271,9 @@ sv_writeiter_delete1(void)
 
 	sv_mergefree(&m, &st_r.a);
 
-	st_listfree(&vlista, &st_r.a);
-	st_listfree(&vlistb, &st_r.a);
-	sv_updatefree(&u, &st_r.r);
+	st_listfree(&vlista, &st_r.r);
+	st_listfree(&vlistb, &st_r.r);
+	sv_upsertfree(&u, &st_r.r);
 }
 
 static void
@@ -1281,21 +1281,21 @@ sv_writeiter_delete2(void)
 {
 	stlist vlista;
 	stlist vlistb;
-	st_listinit(&vlista, 0);
-	st_listinit(&vlistb, 0);
+	st_listinit(&vlista, ST_SVVRAW);
+	st_listinit(&vlistb, ST_SVVRAW);
 
 	int key = 7;
 
-	st_sv(&st_r.g, &vlista, 10, 0, key);
-	st_sv(&st_r.g, &vlista,  9, SVDELETE|SVDUP, key);
-	st_sv(&st_r.g, &vlista,  8, SVDELETE|SVDUP, key);
+	st_svv(&st_r.g, &vlista, 10, 0, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  9, SVDELETE|SVDUP, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  8, SVDELETE|SVDUP, key, NULL, 0);
 
 	ssiter ita;
 	ss_iterinit(ss_bufiterref, &ita);
-	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(svv*));
 	ssiter itb;
 	ss_iterinit(ss_bufiterref, &itb);
-	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(svv*));
 
 	svmerge m;
 	sv_mergeinit(&m);
@@ -1310,23 +1310,23 @@ sv_writeiter_delete2(void)
 	ss_iterinit(sv_mergeiter, &merge);
 	ss_iteropen(sv_mergeiter, &merge, &st_r.r, &m, SS_GTE);
 
-	svupdate u;
-	sv_updateinit(&u);
+	svupsert u;
+	sv_upsertinit(&u);
 	ssiter iter;
 	ss_iterinit(sv_writeiter, &iter);
 	uint64_t limit = 10 * (sizeof(svv) + sizeof(key));
-	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 8ULL, 0, 0);
+	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 0, 0, 8ULL);
 
 	int i = 0;
 	i = 0;
 	while (ss_iteratorhas(&iter)) {
-		sv *v = (sv*)ss_iteratorof(&iter);
-		t( *(int*)sv_key(v, &st_r.r, 0) == key );
-		t( sv_lsn(v) == 10 - i );
+		char *v = ss_iteratorof(&iter);
+		t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == key );
+		t( sf_lsn(st_r.r.scheme, v) == 10 - i );
 		if (i == 0)
-			t( sv_flags(v) == 0 );
+			t( sf_flags(st_r.r.scheme, v) == 0 );
 		else
-			t( sv_flags(v) == (SVDELETE | SVDUP) );
+			t( sf_flags(st_r.r.scheme, v) == (SVDELETE | SVDUP) );
 		ss_iteratornext(&iter);
 		i++;
 	}
@@ -1335,9 +1335,9 @@ sv_writeiter_delete2(void)
 
 	sv_mergefree(&m, &st_r.a);
 
-	st_listfree(&vlista, &st_r.a);
-	st_listfree(&vlistb, &st_r.a);
-	sv_updatefree(&u, &st_r.r);
+	st_listfree(&vlista, &st_r.r);
+	st_listfree(&vlistb, &st_r.r);
+	sv_upsertfree(&u, &st_r.r);
 }
 
 static void
@@ -1345,21 +1345,21 @@ sv_writeiter_delete3(void)
 {
 	stlist vlista;
 	stlist vlistb;
-	st_listinit(&vlista, 0);
-	st_listinit(&vlistb, 0);
+	st_listinit(&vlista, ST_SVVRAW);
+	st_listinit(&vlistb, ST_SVVRAW);
 
 	int key = 7;
 
-	st_sv(&st_r.g, &vlista, 10, SVDELETE, key);
-	st_sv(&st_r.g, &vlista,  9, SVDELETE|SVDUP, key);
-	st_sv(&st_r.g, &vlista,  8, SVDELETE|SVDUP, key);
+	st_svv(&st_r.g, &vlista, 10, SVDELETE, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  9, SVDELETE|SVDUP, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  8, SVDELETE|SVDUP, key, NULL, 0);
 
 	ssiter ita;
 	ss_iterinit(ss_bufiterref, &ita);
-	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(svv*));
 	ssiter itb;
 	ss_iterinit(ss_bufiterref, &itb);
-	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(svv*));
 
 	svmerge m;
 	sv_mergeinit(&m);
@@ -1374,23 +1374,23 @@ sv_writeiter_delete3(void)
 	ss_iterinit(sv_mergeiter, &merge);
 	ss_iteropen(sv_mergeiter, &merge, &st_r.r, &m, SS_GTE);
 
-	svupdate u;
-	sv_updateinit(&u);
+	svupsert u;
+	sv_upsertinit(&u);
 	ssiter iter;
 	ss_iterinit(sv_writeiter, &iter);
 	uint64_t limit = 10 * (sizeof(svv) + sizeof(key));
-	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 7ULL, 0, 0);
+	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 0, 0, 7ULL);
 
 	int i = 0;
 	i = 0;
 	while (ss_iteratorhas(&iter)) {
-		sv *v = (sv*)ss_iteratorof(&iter);
-		t( *(int*)sv_key(v, &st_r.r, 0) == key );
-		t( sv_lsn(v) == 10 - i );
+		char *v = ss_iteratorof(&iter);
+		t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == key );
+		t( sf_lsn(st_r.r.scheme, v) == 10 - i );
 		if (i == 0)
-			t( sv_flags(v) == SVDELETE );
+			t( sf_flags(st_r.r.scheme, v) == SVDELETE );
 		else
-			t( sv_flags(v) == (SVDELETE | SVDUP) );
+			t( sf_flags(st_r.r.scheme, v) == (SVDELETE | SVDUP) );
 		ss_iteratornext(&iter);
 		i++;
 	}
@@ -1399,9 +1399,9 @@ sv_writeiter_delete3(void)
 
 	sv_mergefree(&m, &st_r.a);
 
-	st_listfree(&vlista, &st_r.a);
-	st_listfree(&vlistb, &st_r.a);
-	sv_updatefree(&u, &st_r.r);
+	st_listfree(&vlista, &st_r.r);
+	st_listfree(&vlistb, &st_r.r);
+	sv_upsertfree(&u, &st_r.r);
 }
 
 static void
@@ -1409,21 +1409,21 @@ sv_writeiter_delete4(void)
 {
 	stlist vlista;
 	stlist vlistb;
-	st_listinit(&vlista, 0);
-	st_listinit(&vlistb, 0);
+	st_listinit(&vlista, ST_SVVRAW);
+	st_listinit(&vlistb, ST_SVVRAW);
 
 	int key = 7;
 
-	st_sv(&st_r.g, &vlista, 10, SVDELETE, key);
-	st_sv(&st_r.g, &vlista,  9, SVDELETE|SVDUP, key);
-	st_sv(&st_r.g, &vlista,  8, SVDELETE|SVDUP, key);
+	st_svv(&st_r.g, &vlista, 10, SVDELETE, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  9, SVDELETE|SVDUP, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  8, SVDELETE|SVDUP, key, NULL, 0);
 
 	ssiter ita;
 	ss_iterinit(ss_bufiterref, &ita);
-	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(svv*));
 	ssiter itb;
 	ss_iterinit(ss_bufiterref, &itb);
-	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(svv*));
 
 	svmerge m;
 	sv_mergeinit(&m);
@@ -1438,23 +1438,23 @@ sv_writeiter_delete4(void)
 	ss_iterinit(sv_mergeiter, &merge);
 	ss_iteropen(sv_mergeiter, &merge, &st_r.r, &m, SS_GTE);
 
-	svupdate u;
-	sv_updateinit(&u);
+	svupsert u;
+	sv_upsertinit(&u);
 	ssiter iter;
 	ss_iterinit(sv_writeiter, &iter);
 	uint64_t limit = 10 * (sizeof(svv) + sizeof(key));
-	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 10ULL, 0, 0);
+	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 0, 0, 10ULL);
 
 	int i = 0;
 	i = 0;
 	while (ss_iteratorhas(&iter)) {
-		sv *v = (sv*)ss_iteratorof(&iter);
-		t( *(int*)sv_key(v, &st_r.r, 0) == key );
-		t( sv_lsn(v) == 10 - i );
+		char *v = ss_iteratorof(&iter);
+		t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == key );
+		t( sf_lsn(st_r.r.scheme, v) == 10 - i );
 		if (i == 0)
-			t( sv_flags(v) == SVDELETE );
+			t( sf_flags(st_r.r.scheme, v) == SVDELETE );
 		else
-			t( sv_flags(v) == (SVDELETE | SVDUP) );
+			t( sf_flags(st_r.r.scheme, v) == (SVDELETE | SVDUP) );
 		ss_iteratornext(&iter);
 		i++;
 	}
@@ -1463,9 +1463,9 @@ sv_writeiter_delete4(void)
 
 	sv_mergefree(&m, &st_r.a);
 
-	st_listfree(&vlista, &st_r.a);
-	st_listfree(&vlistb, &st_r.a);
-	sv_updatefree(&u, &st_r.r);
+	st_listfree(&vlista, &st_r.r);
+	st_listfree(&vlistb, &st_r.r);
+	sv_upsertfree(&u, &st_r.r);
 }
 
 static void
@@ -1473,21 +1473,21 @@ sv_writeiter_delete5(void)
 {
 	stlist vlista;
 	stlist vlistb;
-	st_listinit(&vlista, 0);
-	st_listinit(&vlistb, 0);
+	st_listinit(&vlista, ST_SVVRAW);
+	st_listinit(&vlistb, ST_SVVRAW);
 
 	int key = 7;
 
-	st_sv(&st_r.g, &vlista, 10, SVDELETE, key);
-	st_sv(&st_r.g, &vlista,  9, SVDELETE|SVDUP, key);
-	st_sv(&st_r.g, &vlista,  8, SVDELETE|SVDUP, key);
+	st_svv(&st_r.g, &vlista, 10, SVDELETE, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  9, SVDELETE|SVDUP, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  8, SVDELETE|SVDUP, key, NULL, 0);
 
 	ssiter ita;
 	ss_iterinit(ss_bufiterref, &ita);
-	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(svv*));
 	ssiter itb;
 	ss_iterinit(ss_bufiterref, &itb);
-	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(svv*));
 
 	svmerge m;
 	sv_mergeinit(&m);
@@ -1502,23 +1502,23 @@ sv_writeiter_delete5(void)
 	ss_iterinit(sv_mergeiter, &merge);
 	ss_iteropen(sv_mergeiter, &merge, &st_r.r, &m, SS_GTE);
 
-	svupdate u;
-	sv_updateinit(&u);
+	svupsert u;
+	sv_upsertinit(&u);
 	ssiter iter;
 	ss_iterinit(sv_writeiter, &iter);
 	uint64_t limit = 10 * (sizeof(svv) + sizeof(key));
-	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 11ULL, 0, 0);
+	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 0, 0, 11ULL);
 
 	int i = 0;
 	i = 0;
 	while (ss_iteratorhas(&iter)) {
-		sv *v = (sv*)ss_iteratorof(&iter);
-		t( *(int*)sv_key(v, &st_r.r, 0) == key );
-		t( sv_lsn(v) == 10 - i );
+		char *v = ss_iteratorof(&iter);
+		t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == key );
+		t( sf_lsn(st_r.r.scheme, v) == 10 - i );
 		if (i == 0)
-			t( sv_flags(v) == SVDELETE );
+			t( sf_flags(st_r.r.scheme, v) == SVDELETE );
 		else
-			t( sv_flags(v) == (SVDELETE | SVDUP) );
+			t( sf_flags(st_r.r.scheme, v) == (SVDELETE | SVDUP) );
 		ss_iteratornext(&iter);
 		i++;
 	}
@@ -1527,9 +1527,9 @@ sv_writeiter_delete5(void)
 
 	sv_mergefree(&m, &st_r.a);
 
-	st_listfree(&vlista, &st_r.a);
-	st_listfree(&vlistb, &st_r.a);
-	sv_updatefree(&u, &st_r.r);
+	st_listfree(&vlista, &st_r.r);
+	st_listfree(&vlistb, &st_r.r);
+	sv_upsertfree(&u, &st_r.r);
 }
 
 static void
@@ -1537,24 +1537,24 @@ sv_writeiter_delete6(void)
 {
 	stlist vlista;
 	stlist vlistb;
-	st_listinit(&vlista, 0);
-	st_listinit(&vlistb, 0);
+	st_listinit(&vlista, ST_SVVRAW);
+	st_listinit(&vlistb, ST_SVVRAW);
 
 	int key = 6;
-	st_sv(&st_r.g, &vlista, 12, 0, key);
+	st_svv(&st_r.g, &vlista, 12, 0, key, NULL, 0);
 	key = 7;
-	st_sv(&st_r.g, &vlista, 10, SVDELETE, key);
-	st_sv(&st_r.g, &vlista,  9, SVDELETE|SVDUP, key);
-	st_sv(&st_r.g, &vlista,  8, SVDELETE|SVDUP, key);
+	st_svv(&st_r.g, &vlista, 10, SVDELETE, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  9, SVDELETE|SVDUP, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  8, SVDELETE|SVDUP, key, NULL, 0);
 	key = 10;
-	st_sv(&st_r.g, &vlista, 11, 0, key);
+	st_svv(&st_r.g, &vlista, 11, 0, key, NULL, 0);
 
 	ssiter ita;
 	ss_iterinit(ss_bufiterref, &ita);
-	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(svv*));
 	ssiter itb;
 	ss_iterinit(ss_bufiterref, &itb);
-	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(svv*));
 
 	svmerge m;
 	sv_mergeinit(&m);
@@ -1569,25 +1569,25 @@ sv_writeiter_delete6(void)
 	ss_iterinit(sv_mergeiter, &merge);
 	ss_iteropen(sv_mergeiter, &merge, &st_r.r, &m, SS_GTE);
 
-	svupdate u;
-	sv_updateinit(&u);
+	svupsert u;
+	sv_upsertinit(&u);
 	ssiter iter;
 	ss_iterinit(sv_writeiter, &iter);
 	uint64_t limit = 10 * (sizeof(svv) + sizeof(key));
-	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 13ULL, 0, 0);
+	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 0, 0, 13ULL);
 
 	int i = 0;
 	i = 0;
 	while (ss_iteratorhas(&iter)) {
-		sv *v = (sv*)ss_iteratorof(&iter);
+		char *v = ss_iteratorof(&iter);
 		if (i == 0) {
-			t( *(int*)sv_key(v, &st_r.r, 0) == 6 );
-			t( sv_lsn(v) == 12 );
+			t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == 6 );
+			t( sf_lsn(st_r.r.scheme, v) == 12 );
 		} else {
-			t( *(int*)sv_key(v, &st_r.r, 0) == 10 );
-			t( sv_lsn(v) == 11 );
+			t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == 10 );
+			t( sf_lsn(st_r.r.scheme, v) == 11 );
 		}
-		t( sv_flags(v) == 0 );
+		t( sf_flags(st_r.r.scheme, v) == 0 );
 		ss_iteratornext(&iter);
 		i++;
 	}
@@ -1596,9 +1596,9 @@ sv_writeiter_delete6(void)
 
 	sv_mergefree(&m, &st_r.a);
 
-	st_listfree(&vlista, &st_r.a);
-	st_listfree(&vlistb, &st_r.a);
-	sv_updatefree(&u, &st_r.r);
+	st_listfree(&vlista, &st_r.r);
+	st_listfree(&vlistb, &st_r.r);
+	sv_upsertfree(&u, &st_r.r);
 }
 
 static void
@@ -1606,24 +1606,24 @@ sv_writeiter_delete7(void)
 {
 	stlist vlista;
 	stlist vlistb;
-	st_listinit(&vlista, 0);
-	st_listinit(&vlistb, 0);
+	st_listinit(&vlista, ST_SVVRAW);
+	st_listinit(&vlistb, ST_SVVRAW);
 
 	int key = 6;
-	st_sv(&st_r.g, &vlista, 12, 0, key);
+	st_svv(&st_r.g, &vlista, 12, 0, key, NULL, 0);
 	key = 7;
-	st_sv(&st_r.g, &vlista, 10, SVDELETE, key);
-	st_sv(&st_r.g, &vlista,  9, SVDELETE|SVDUP, key);
-	st_sv(&st_r.g, &vlista,  8, SVDELETE|SVDUP, key);
+	st_svv(&st_r.g, &vlista, 10, SVDELETE, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  9, SVDELETE|SVDUP, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  8, SVDELETE|SVDUP, key, NULL, 0);
 	key = 10;
-	st_sv(&st_r.g, &vlista, 11, 0, key);
+	st_svv(&st_r.g, &vlista, 11, 0, key, NULL, 0);
 
 	ssiter ita;
 	ss_iterinit(ss_bufiterref, &ita);
-	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(svv*));
 	ssiter itb;
 	ss_iterinit(ss_bufiterref, &itb);
-	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(svv*));
 
 	svmerge m;
 	sv_mergeinit(&m);
@@ -1638,25 +1638,25 @@ sv_writeiter_delete7(void)
 	ss_iterinit(sv_mergeiter, &merge);
 	ss_iteropen(sv_mergeiter, &merge, &st_r.r, &m, SS_GTE);
 
-	svupdate u;
-	sv_updateinit(&u);
+	svupsert u;
+	sv_upsertinit(&u);
 	ssiter iter;
 	ss_iterinit(sv_writeiter, &iter);
 	uint64_t limit = 10 * (sizeof(svv) + sizeof(key));
-	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 10ULL, 0, 0);
+	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 0, 0, 10ULL);
 
 	int i = 0;
 	i = 0;
 	while (ss_iteratorhas(&iter)) {
-		sv *v = (sv*)ss_iteratorof(&iter);
+		char *v = ss_iteratorof(&iter);
 		if (i == 0) {
-			t( *(int*)sv_key(v, &st_r.r, 0) == 6 );
-			t( sv_flags(v) == 0 );
-			t( sv_lsn(v) == 12 );
+			t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == 6 );
+			t( sf_flags(st_r.r.scheme, v) == 0 );
+			t( sf_lsn(st_r.r.scheme, v) == 12 );
 		} else {
-			t( *(int*)sv_key(v, &st_r.r, 0) == 10 );
-			t( sv_flags(v) == 0 );
-			t( sv_lsn(v) == 11 );
+			t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == 10 );
+			t( sf_flags(st_r.r.scheme, v) == 0 );
+			t( sf_lsn(st_r.r.scheme, v) == 11 );
 		}
 		ss_iteratornext(&iter);
 		i++;
@@ -1666,9 +1666,9 @@ sv_writeiter_delete7(void)
 
 	sv_mergefree(&m, &st_r.a);
 
-	st_listfree(&vlista, &st_r.a);
-	st_listfree(&vlistb, &st_r.a);
-	sv_updatefree(&u, &st_r.r);
+	st_listfree(&vlista, &st_r.r);
+	st_listfree(&vlistb, &st_r.r);
+	sv_upsertfree(&u, &st_r.r);
 }
 
 static void
@@ -1676,24 +1676,24 @@ sv_writeiter_delete8(void)
 {
 	stlist vlista;
 	stlist vlistb;
-	st_listinit(&vlista, 0);
-	st_listinit(&vlistb, 0);
+	st_listinit(&vlista, ST_SVVRAW);
+	st_listinit(&vlistb, ST_SVVRAW);
 
 	int key = 6;
-	st_sv(&st_r.g, &vlista, 12, 0, key);
+	st_svv(&st_r.g, &vlista, 12, 0, key, NULL, 0);
 	key = 7;
-	st_sv(&st_r.g, &vlista, 10, SVDELETE, key);
-	st_sv(&st_r.g, &vlista,  9, SVDELETE|SVDUP, key);
-	st_sv(&st_r.g, &vlista,  8, SVDELETE|SVDUP, key);
+	st_svv(&st_r.g, &vlista, 10, SVDELETE, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  9, SVDELETE|SVDUP, key, NULL, 0);
+	st_svv(&st_r.g, &vlista,  8, SVDELETE|SVDUP, key, NULL, 0);
 	key = 10;
-	st_sv(&st_r.g, &vlista, 11, 0, key);
+	st_svv(&st_r.g, &vlista, 11, 0, key, NULL, 0);
 
 	ssiter ita;
 	ss_iterinit(ss_bufiterref, &ita);
-	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(svv*));
 	ssiter itb;
 	ss_iterinit(ss_bufiterref, &itb);
-	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(svv*));
 
 	svmerge m;
 	sv_mergeinit(&m);
@@ -1708,35 +1708,35 @@ sv_writeiter_delete8(void)
 	ss_iterinit(sv_mergeiter, &merge);
 	ss_iteropen(sv_mergeiter, &merge, &st_r.r, &m, SS_GTE);
 
-	svupdate u;
-	sv_updateinit(&u);
+	svupsert u;
+	sv_upsertinit(&u);
 	ssiter iter;
 	ss_iterinit(sv_writeiter, &iter);
 	uint64_t limit = 10 * (sizeof(svv) + sizeof(key));
-	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 9ULL, 0, 0);
+	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 0, 0, 9ULL);
 
 	int i = 0;
 	i = 0;
 	while (ss_iteratorhas(&iter)) {
-		sv *v = (sv*)ss_iteratorof(&iter);
+		char *v = ss_iteratorof(&iter);
 		if (i == 0) {
-			t( *(int*)sv_key(v, &st_r.r, 0) == 6 );
-			t( sv_flags(v) == 0 );
-			t( sv_lsn(v) == 12 );
+			t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == 6 );
+			t( sf_flags(st_r.r.scheme, v) == 0 );
+			t( sf_lsn(st_r.r.scheme, v) == 12 );
 		} else
 		if (i == 1) {
-			t( *(int*)sv_key(v, &st_r.r, 0) == 7 );
-			t( sv_flags(v) == SVDELETE );
-			t( sv_lsn(v) == 10 );
+			t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == 7 );
+			t( sf_flags(st_r.r.scheme, v) == SVDELETE );
+			t( sf_lsn(st_r.r.scheme, v) == 10 );
 		} else
 		if (i == 2) {
-			t( *(int*)sv_key(v, &st_r.r, 0) == 7 );
-			t( sv_flags(v) == (SVDELETE|SVDUP) );
-			t( sv_lsn(v) ==  9 );
+			t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == 7 );
+			t( sf_flags(st_r.r.scheme, v) == (SVDELETE|SVDUP) );
+			t( sf_lsn(st_r.r.scheme, v) ==  9 );
 		} else {
-			t( *(int*)sv_key(v, &st_r.r, 0) == 10 );
-			t( sv_flags(v) == 0 );
-			t( sv_lsn(v) == 11 );
+			t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == 10 );
+			t( sf_flags(st_r.r.scheme, v) == 0 );
+			t( sf_lsn(st_r.r.scheme, v) == 11 );
 		}
 		ss_iteratornext(&iter);
 		i++;
@@ -1746,9 +1746,9 @@ sv_writeiter_delete8(void)
 
 	sv_mergefree(&m, &st_r.a);
 
-	st_listfree(&vlista, &st_r.a);
-	st_listfree(&vlistb, &st_r.a);
-	sv_updatefree(&u, &st_r.r);
+	st_listfree(&vlista, &st_r.r);
+	st_listfree(&vlistb, &st_r.r);
+	sv_upsertfree(&u, &st_r.r);
 }
 
 static void
@@ -1756,25 +1756,25 @@ sv_writeiter_duprange0(void)
 {
 	stlist vlista;
 	stlist vlistb;
-	st_listinit(&vlista, 0);
-	st_listinit(&vlistb, 0);
+	st_listinit(&vlista, ST_SVVRAW);
+	st_listinit(&vlistb, ST_SVVRAW);
 
 	int key = 7;
 	int lsn = 1;
 	int i = 0;
 	while (i < 100) {
-		st_sv(&st_r.g, &vlista, 100 + lsn, 0, key);
-		st_sv(&st_r.g, &vlista, lsn, 0|SVDUP, key);
+		st_svv(&st_r.g, &vlista, 100 + lsn, 0, key, NULL, 0);
+		st_svv(&st_r.g, &vlista, lsn, 0|SVDUP, key, NULL, 0);
 		lsn++;
 		i++;
 	}
 
 	ssiter ita;
 	ss_iterinit(ss_bufiterref, &ita);
-	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(svv*));
 	ssiter itb;
 	ss_iterinit(ss_bufiterref, &itb);
-	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(svv*));
 
 	svmerge m;
 	sv_mergeinit(&m);
@@ -1789,12 +1789,12 @@ sv_writeiter_duprange0(void)
 	ss_iterinit(sv_mergeiter, &merge);
 	ss_iteropen(sv_mergeiter, &merge, &st_r.r, &m, SS_GTE);
 
-	svupdate u;
-	sv_updateinit(&u);
+	svupsert u;
+	sv_upsertinit(&u);
 	ssiter iter;
 	ss_iterinit(sv_writeiter, &iter);
 	uint64_t limit = UINT64_MAX;
-	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 100ULL, 0, 0);
+	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 0, 0, 100ULL);
 
 	i = 0;
 	while (ss_iteratorhas(&iter)) {
@@ -1806,9 +1806,9 @@ sv_writeiter_duprange0(void)
 
 	sv_mergefree(&m, &st_r.a);
 
-	st_listfree(&vlista, &st_r.a);
-	st_listfree(&vlistb, &st_r.a);
-	sv_updatefree(&u, &st_r.r);
+	st_listfree(&vlista, &st_r.r);
+	st_listfree(&vlistb, &st_r.r);
+	sv_upsertfree(&u, &st_r.r);
 }
 
 static void
@@ -1816,28 +1816,28 @@ sv_writeiter_duprange1(void)
 {
 	stlist vlista;
 	stlist vlistb;
-	st_listinit(&vlista, 0);
-	st_listinit(&vlistb, 0);
+	st_listinit(&vlista, ST_SVVRAW);
+	st_listinit(&vlistb, ST_SVVRAW);
 
 	int key = 7;
 	int lsn = 1;
 	int i = 0;
 	while (i < 100) {
-		st_sv(&st_r.g, &vlista, 100 + lsn, 0, key);
-		st_sv(&st_r.g, &vlista, lsn, 0|SVDUP, key);
+		st_svv(&st_r.g, &vlista, 100 + lsn, 0, key, NULL, 0);
+		st_svv(&st_r.g, &vlista, lsn, 0|SVDUP, key, NULL, 0);
 		lsn++;
 		i++;
 	}
 
 	ssiter ita;
 	ss_iterinit(ss_bufiterref, &ita);
-	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &ita, &vlista.list, sizeof(svv*));
 	ssiter itb;
 	ss_iterinit(ss_bufiterref, &itb);
-	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(sv*));
+	ss_iteropen(ss_bufiterref, &itb, &vlistb.list, sizeof(svv*));
 
-	svupdate u;
-	sv_updateinit(&u);
+	svupsert u;
+	sv_upsertinit(&u);
 
 	svmerge m;
 	sv_mergeinit(&m);
@@ -1854,7 +1854,7 @@ sv_writeiter_duprange1(void)
 	ssiter iter;
 	ss_iterinit(sv_writeiter, &iter);
 	uint64_t limit = UINT64_MAX;
-	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 100ULL + lsn, 0, 0);
+	ss_iteropen(sv_writeiter, &iter, &st_r.r, &merge, &u, limit, sizeof(svv), 0, 0, 100ULL + lsn);
 
 	i = 0;
 	while (ss_iteratorhas(&iter)) {
@@ -1866,9 +1866,9 @@ sv_writeiter_duprange1(void)
 
 	sv_mergefree(&m, &st_r.a);
 
-	st_listfree(&vlista, &st_r.a);
-	st_listfree(&vlistb, &st_r.a);
-	sv_updatefree(&u, &st_r.r);
+	st_listfree(&vlista, &st_r.r);
+	st_listfree(&vlistb, &st_r.r);
+	sv_upsertfree(&u, &st_r.r);
 }
 
 stgroup *sv_writeiter_group(void)

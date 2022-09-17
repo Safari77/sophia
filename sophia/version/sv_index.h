@@ -25,27 +25,20 @@ struct svindex {
 } sspacked;
 
 ss_rbget(sv_indexmatch,
-         sr_compare(scheme, sv_vpointer(sscast(n, svv, node)),
-                    (sscast(n, svv, node))->size,
-                    key, keysize))
+         sf_compare(scheme, sv_vpointer(sscast(n, svv, node)), key))
 
 int  sv_indexinit(svindex*);
 int  sv_indexfree(svindex*, sr*);
+int  sv_indexupdate(svindex*, sr*, svindexpos*, svv*);
 svv *sv_indexget(svindex*, sr*, svindexpos*, svv*);
-int  sv_indexupdate(svindex*, svindexpos*, svv*);
 
 static inline int
-sv_indexset(svindex *i, sr *r, svv  *v)
+sv_indexset(svindex *i, sr *r, svv *v)
 {
 	svindexpos pos;
 	sv_indexget(i, r, &pos, v);
-	sv_indexupdate(i, &pos, v);
+	sv_indexupdate(i, r, &pos, v);
 	return 0;
-}
-
-static inline uint32_t
-sv_indexused(svindex *i) {
-	return i->count * sizeof(svv) + i->used;
 }
 
 #endif

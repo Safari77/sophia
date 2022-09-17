@@ -26,7 +26,9 @@ backup_test0(void)
 	t( sp_setstring(env, "backup.path", st_r.conf->backup_dir, 0) == 0 );
 	t( sp_setstring(env, "db", "test", 0) == 0 );
 	t( sp_setstring(env, "db.test.path", st_r.conf->db_dir, 0) == 0 );
-	t( sp_setstring(env, "db.test.index.key", "u32", 0) == 0 );
+	t( sp_setstring(env, "db.test.scheme", "key", 0) == 0 );
+	t( sp_setstring(env, "db.test.scheme.key", "u32,key(0)", 0) == 0 );
+	t( sp_setstring(env, "db.test.scheme", "value", 0) == 0 );
 	t( sp_setint(env, "db.test.sync", 0) == 0 );
 	t( sp_setint(env, "log.sync", 0) == 0 );
 	t( sp_setint(env, "log.rotate_sync", 0) == 0 );
@@ -36,7 +38,7 @@ backup_test0(void)
 
 	int i = 0;
 	while ( i < 100 ) {
-		void *o = sp_object(db);
+		void *o = sp_document(db);
 		t( sp_setstring(o, "key", &i, sizeof(i)) == 0 );
 		t( sp_setstring(o, "value", &i, sizeof(i)) == 0 );
 		t( sp_set(db, o) == 0 );
@@ -47,11 +49,11 @@ backup_test0(void)
 	t( sp_setint(env, "backup.run", 0) == 0 );
 
 	/* state 0 */
-	t( sp_getint(env, "backup.active") == 1 );
+	t( sp_getint(env, "backup.active") == 2 );
 
 	/* state 1 + 2 */
 	t( sp_setint(env, "scheduler.run", 0) == 1 );
-	/* index backup completion */
+	/* scheme backup completion */
 	t( sp_setint(env, "scheduler.run", 0) == 1 );
 	/* state 3 */
 	t( sp_setint(env, "scheduler.run", 0) == 0 );
@@ -74,7 +76,8 @@ backup_test0(void)
 	t( sp_setstring(env, "backup.path", st_r.conf->backup_dir, 0) == 0 );
 	t( sp_setstring(env, "db", "test", 0) == 0 );
 	t( sp_setstring(env, "db.test.path", st_r.conf->db_dir, 0) == 0 );
-	t( sp_setstring(env, "db.test.index.key", "u32", 0) == 0 );
+	t( sp_setstring(env, "db.test.scheme", "key", 0) == 0 );
+	t( sp_setstring(env, "db.test.scheme.key", "u32,key(0)", 0) == 0 );
 	t( sp_setint(env, "db.test.sync", 0) == 0 );
 	t( sp_setint(env, "log.sync", 0) == 0 );
 	t( sp_setint(env, "log.rotate_sync", 0) == 0 );
@@ -85,7 +88,7 @@ backup_test0(void)
 	/* ensure correct bsn recover */
 	t( sp_getint(env, "metric.bsn") == 1 );
 
-	void *o = sp_object(db);
+	void *o = sp_document(db);
 	t( o != NULL );
 	void *cur = sp_cursor(env);
 	t( cur != NULL );
@@ -100,14 +103,6 @@ backup_test0(void)
 	t( sp_destroy(env) == 0 );
 }
 
-static int trigger_called = 0;
-
-static inline void
-on_event(void *arg)
-{
-	trigger_called = 1;
-}
-
 static void
 backup_test1(void)
 {
@@ -119,12 +114,13 @@ backup_test1(void)
 	t( sp_setstring(env, "backup.path", st_r.conf->backup_dir, 0) == 0 );
 	t( sp_setstring(env, "db", "test", 0) == 0 );
 	t( sp_setstring(env, "db.test.path", st_r.conf->db_dir, 0) == 0 );
-	t( sp_setstring(env, "db.test.index.key", "u32", 0) == 0 );
+	t( sp_setstring(env, "db.test.scheme", "key", 0) == 0 );
+	t( sp_setstring(env, "db.test.scheme.key", "u32,key(0)", 0) == 0 );
+	t( sp_setstring(env, "db.test.scheme", "value", 0) == 0 );
+	t( sp_setint(env, "db.test.compaction.cache", 0) == 0 );
 	t( sp_setint(env, "db.test.sync", 0) == 0 );
 	t( sp_setint(env, "log.sync", 0) == 0 );
 	t( sp_setint(env, "log.rotate_sync", 0) == 0 );
-	t( sp_setstring(env, "scheduler.on_event", on_event, 0) == 0 );
-	t( sp_setint(env, "scheduler.event_on_backup", 1) == 0 );
 	t( sp_open(env) == 0 );
 
 	void *db = sp_getobject(env, "db.test");
@@ -132,41 +128,34 @@ backup_test1(void)
 
 	int i = 0;
 	while ( i < 100 ) {
-		void *o = sp_object(db);
+		void *o = sp_document(db);
 		t( sp_setstring(o, "key", &i, sizeof(i)) == 0 );
 		t( sp_setstring(o, "value", &i, sizeof(i)) == 0 );
 		t( sp_set(db, o) == 0 );
 		i++;
 	}
 
-	t( sp_setint(env, "db.test.branch", 0) == 0 );
-	t( sp_setint(env, "scheduler.checkpoint", 0) == 0 );
-	t( sp_setint(env, "scheduler.run", 0) == 1 );
+	t( sp_setint(env, "db.test.compaction.compact", 0) == 0 );
 
 	t( sp_getint(env, "backup.active") == 0 );
 	t( sp_setint(env, "backup.run", 0) == 0 );
 
 	/* state 0 */
-	t( sp_getint(env, "backup.active") == 1 );
+	t( sp_getint(env, "backup.active") == 2 );
 
-	/* state 1 + 2 */
-	t( sp_setint(env, "scheduler.run", 0) == 1 );
-	/* index backup completion */
-	t( sp_setint(env, "scheduler.run", 0) == 1 );
-	/* state 3 + branch */
-	t( sp_setint(env, "scheduler.run", 0) == 1 );
-	t( sp_setint(env, "scheduler.run", 0) == 0 );
-
-	t( trigger_called == 1 );
+	int rc;
+	rc = sp_setint(env, "scheduler.run", 0);
+	t( rc != -1 );
+	rc = sp_setint(env, "scheduler.run", 0);
+	t( rc != -1 );
+	rc = sp_setint(env, "scheduler.run", 0);
+	t( rc != -1 );
+	rc = sp_setint(env, "scheduler.run", 0);
+	t( rc != -1 );
 
 	t( sp_getint(env, "backup.active") == 0 );
 	t( sp_getint(env, "backup.last") == 1 );
 	t( sp_getint(env, "backup.last_complete") == 1 );
-
-	void *o = sp_poll(env);
-	t( o != NULL );
-	t( sp_destroy(o) == 0 );
-	t( sp_poll(env) == NULL );
 
 	t( sp_destroy(env) == 0 );
 
@@ -181,7 +170,9 @@ backup_test1(void)
 	t( sp_setstring(env, "backup.path", st_r.conf->backup_dir, 0) == 0 );
 	t( sp_setstring(env, "db", "test", 0) == 0 );
 	t( sp_setstring(env, "db.test.path", st_r.conf->db_dir, 0) == 0 );
-	t( sp_setstring(env, "db.test.index.key", "u32", 0) == 0 );
+	t( sp_setstring(env, "db.test.scheme", "key", 0) == 0 );
+	t( sp_setstring(env, "db.test.scheme.key", "u32,key(0)", 0) == 0 );
+	t( sp_setstring(env, "db.test.scheme", "value", 0) == 0 );
 	t( sp_setint(env, "db.test.sync", 0) == 0 );
 	t( sp_setint(env, "log.sync", 0) == 0 );
 	t( sp_setint(env, "log.rotate_sync", 0) == 0 );
@@ -189,7 +180,7 @@ backup_test1(void)
 	t( db != NULL );
 	t( sp_open(env) == 0 );
 
-	o = sp_object(db);
+	void *o = sp_document(db);
 	t( o != NULL );
 	void *cur = sp_cursor(env);
 	t( cur != NULL );

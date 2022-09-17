@@ -13,28 +13,32 @@ typedef struct sdread sdread;
 typedef struct sdreadarg sdreadarg;
 
 struct sdreadarg {
-	sdindex  *index;
-	ssbuf    *buf;
-	ssbuf    *buf_xf;
-	ssbuf    *buf_read;
-	ssiter   *index_iter;
-	ssiter   *page_iter;
-	ssmmap   *mmap;
-	ssblob   *memory;
-	ssfile   *file;
-	ssorder   o;
-	int       use_compression;
-	int       use_memory;
-	int       use_mmap;
-	int       use_mmap_copy;
-	sr       *r;
+	sdio       *io;
+	sdindex    *index;
+	ssbuf      *buf;
+	ssbuf      *buf_read;
+	ssiter     *index_iter;
+	ssiter     *page_iter;
+	ssmmap     *mmap;
+	ssfile     *file;
+	ssorder     o;
+	int         from_compaction;
+	int         has;
+	uint64_t    has_vlsn;
+	int         use_mmap;
+	int         use_mmap_copy;
+	int         use_compression;
+	int         use_direct_io;
+	int         direct_io_page_size;
+	ssfilterif *compression_if;
+	sr         *r;
 };
 
 struct sdread {
-	sdreadarg ra;
+	sdreadarg    ra;
 	sdindexpage *ref;
-	sdpage page;
-	int reads;
+	sdpage       page;
+	int          reads;
 } sspacked;
 
 static inline int
@@ -43,45 +47,32 @@ sd_read_page(sdread *i, sdindexpage *ref)
 	sdreadarg *arg = &i->ra;
 	sr *r = arg->r;
 
-	ss_bufreset(arg->buf);
-	int rc = ss_bufensure(arg->buf, r->a, ref->sizeorigin);
-	if (ssunlikely(rc == -1))
-		return sr_oom(r->e);
-	ss_bufreset(arg->buf_xf);
-	rc = ss_bufensure(arg->buf_xf, r->a, arg->index->h->sizevmax);
-	if (ssunlikely(rc == -1))
-		return sr_oom(r->e);
-
+	int page_align = arg->io->size_page * 4;
 	i->reads++;
 
-	/* in-memory mode only offsets */
-	uint64_t branch_start_offset =
-		arg->index->h->offset - arg->index->h->total - sizeof(sdseal);
-	uint64_t branch_ref_offset =
-		ref->offset - branch_start_offset;
+	ss_bufreset(arg->buf);
+	int rc = ss_bufensure(arg->buf, r->a, ref->sizeorigin + page_align);
+	if (ssunlikely(rc == -1))
+		return sr_oom(r->e);
 
 	/* compression */
+	char *page_pointer;
 	if (arg->use_compression)
 	{
-		char *page_pointer;
-		if (arg->use_memory) {
-			page_pointer = arg->memory->map.p + branch_ref_offset;
-		} else
 		if (arg->use_mmap) {
 			page_pointer = arg->mmap->p + ref->offset;
 		} else {
 			ss_bufreset(arg->buf_read);
-			rc = ss_bufensure(arg->buf_read, r->a, ref->size);
+			rc = ss_bufensure(arg->buf_read, r->a, ref->size + page_align);
 			if (ssunlikely(rc == -1))
 				return sr_oom(r->e);
-			rc = ss_filepread(arg->file, ref->offset, arg->buf_read->s, ref->size);
-			if (ssunlikely(rc == -1)) {
-				sr_error(r->e, "db file '%s' read error: %s",
-				         arg->file->file, strerror(errno));
+			rc = sd_ioread(arg->io, r, arg->file, ref->offset,
+			               arg->buf_read->s, ref->size,
+			               arg->from_compaction,
+			               &page_pointer);
+			if (ssunlikely(rc == -1))
 				return -1;
-			}
 			ss_bufadvance(arg->buf_read, ref->size);
-			page_pointer = arg->buf_read->s;
 		}
 
 		/* copy header */
@@ -90,25 +81,21 @@ sd_read_page(sdread *i, sdindexpage *ref)
 
 		/* decompression */
 		ssfilter f;
-		rc = ss_filterinit(&f, (ssfilterif*)r->compression, r->a, SS_FOUTPUT);
+		rc = ss_filterinit(&f, (ssfilterif*)arg->compression_if, r->a, SS_FOUTPUT);
 		if (ssunlikely(rc == -1)) {
-			sr_error(r->e, "db file '%s' decompression error", arg->file->file);
+			sr_error(r->e, "db file '%s' decompression error",
+			         ss_pathof(&arg->file->path));
 			return -1;
 		}
 		int size = ref->size - sizeof(sdpageheader);
 		rc = ss_filternext(&f, arg->buf, page_pointer + sizeof(sdpageheader), size);
 		if (ssunlikely(rc == -1)) {
-			sr_error(r->e, "db file '%s' decompression error", arg->file->file);
+			sr_error(r->e, "db file '%s' decompression error",
+			         ss_pathof(&arg->file->path));
 			return -1;
 		}
 		ss_filterfree(&f);
 		sd_pageinit(&i->page, (sdpageheader*)arg->buf->s);
-		return 0;
-	}
-
-	/* in-memory mode */
-	if (arg->use_memory) {
-		sd_pageinit(&i->page, (sdpageheader*)(arg->memory->map.p + branch_ref_offset));
 		return 0;
 	}
 
@@ -124,19 +111,19 @@ sd_read_page(sdread *i, sdindexpage *ref)
 	}
 
 	/* default */
-	rc = ss_filepread(arg->file, ref->offset, arg->buf->s, ref->sizeorigin);
-	if (ssunlikely(rc == -1)) {
-		sr_error(r->e, "db file '%s' read error: %s",
-		         arg->file->file, strerror(errno));
+	rc = sd_ioread(arg->io, r, arg->file, ref->offset,
+	               arg->buf->s, ref->size,
+	               arg->from_compaction,
+	               &page_pointer);
+	if (ssunlikely(rc == -1))
 		return -1;
-	}
-	ss_bufadvance(arg->buf, ref->sizeorigin);
-	sd_pageinit(&i->page, (sdpageheader*)(arg->buf->s));
+	ss_bufadvance(arg->buf, ref->size);
+	sd_pageinit(&i->page, (sdpageheader*)page_pointer);
 	return 0;
 }
 
 static inline int
-sd_read_openpage(sdread *i, void *key, int keysize)
+sd_read_openpage(sdread *i, char *key)
 {
 	sdreadarg *arg = &i->ra;
 	assert(i->ref != NULL);
@@ -145,26 +132,32 @@ sd_read_openpage(sdread *i, void *key, int keysize)
 		return -1;
 	ss_iterinit(sd_pageiter, arg->page_iter);
 	return ss_iteropen(sd_pageiter, arg->page_iter, arg->r,
-	                   arg->buf_xf,
-	                   &i->page, arg->o, key, keysize);
+	                   &i->page, arg->o, key);
 }
 
 static inline void
 sd_read_next(ssiter*);
 
 static inline int
-sd_read_open(ssiter *iptr, sdreadarg *arg, void *key, int keysize)
+sd_read_open(ssiter *iptr, sdreadarg *arg, char *key)
 {
 	sdread *i = (sdread*)iptr->priv;
 	i->reads = 0;
 	i->ra = *arg;
 	ss_iterinit(sd_indexiter, arg->index_iter);
 	ss_iteropen(sd_indexiter, arg->index_iter, arg->r, arg->index,
-	            arg->o, key, keysize);
+	            arg->o, key);
 	i->ref = ss_iterof(sd_indexiter, arg->index_iter);
 	if (i->ref == NULL)
 		return 0;
-	int rc = sd_read_openpage(i, key, keysize);
+	if (arg->has) {
+		assert(arg->o == SS_GTE);
+		if (sslikely(i->ref->lsnmax <= arg->has_vlsn)) {
+			i->ref = NULL;
+			return 0;
+		}
+	}
+	int rc = sd_read_openpage(i, key);
 	if (ssunlikely(rc == -1)) {
 		i->ref = NULL;
 		return -1;
@@ -215,7 +208,7 @@ retry:
 	i->ref = ss_iterof(sd_indexiter, i->ra.index_iter);
 	if (i->ref == NULL)
 		return;
-	int rc = sd_read_openpage(i, NULL, 0);
+	int rc = sd_read_openpage(i, NULL);
 	if (ssunlikely(rc == -1)) {
 		i->ref = NULL;
 		return;

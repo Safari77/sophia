@@ -28,100 +28,100 @@
 		a. if parent has incomplete and seal - remove both
 		b. if parent has incomplete - remove incomplete
 		c. if parent has seal - remove parent, complete seal
+	5. panic (auto-recover)
 
-	see: test/recovery_crash.test.c
+	see: scheme recover
+	see: test/crash/durability.test.c
 */
 
 #include <libss.h>
 #include <libsf.h>
 #include <libsr.h>
+#include <libso.h>
 #include <libsv.h>
 #include <libsd.h>
 #include <libsi.h>
 
-sinode *si_bootstrap(si *i, uint32_t parent)
+sinode *si_bootstrap(si *i, uint64_t parent)
 {
-	sr *r = i->r;
+	sr *r = &i->r;
 	/* create node */
-	sinode *n = si_nodenew(r);
+	uint64_t id = sr_seq(r->seq, SR_NSNNEXT);
+	sinode *n = si_nodenew(r, id, parent);
 	if (ssunlikely(n == NULL))
 		return NULL;
-	sdid id = {
-		.parent = parent,
-		.flags  = 0,
-		.id     = sr_seq(r->seq, SR_NSNNEXT)
-	};
 	int rc;
-	rc = si_nodecreate(n, r, i->scheme, &id);
+	rc = si_nodecreate(n, r, &i->scheme);
 	if (ssunlikely(rc == -1))
 		goto e0;
-	n->branch = &n->self;
-	n->branch_count++;
-
-	/* in-memory mode support */
-	ssblob *blob = NULL;
-	if (i->scheme->in_memory) {
-		blob = &n->self.copy;
-		rc = ss_blobensure(blob, 4096);
-		if (ssunlikely(rc == -1))
-			goto e0;
-	}
 
 	/* create index with one empty page */
-	sdindex index;
-	sd_indexinit(&index);
-	rc = sd_indexbegin(&index, r);
-	if (ssunlikely(rc == -1))
-		goto e0;
 	sdbuild build;
 	sd_buildinit(&build);
-	rc = sd_buildbegin(&build, r,
-	                   i->scheme->node_page_checksum,
-	                   i->scheme->compression,
-	                   i->scheme->compression_key);
-	if (ssunlikely(rc == -1))
-		goto e1;
-	sd_buildend(&build, r);
-	rc = sd_indexadd(&index, r, &build, sizeof(sdseal));
-	if (ssunlikely(rc == -1))
-		goto e1;
+	sdindex index;
+	sd_indexinit(&index);
+	sdbuildindex build_index;
+	sd_buildindex_init(&build_index);
 
-	/* write seal */
-	uint64_t seal = n->file.size;
-	rc = sd_writeseal(r, &n->file, blob);
+	rc = sd_buildindex_begin(&build_index);
 	if (ssunlikely(rc == -1))
-		goto e1;
-	/* write page */
-	rc = sd_writepage(r, &n->file, blob, &build);
-	if (ssunlikely(rc == -1))
-		goto e1;
-	sd_indexcommit(&index, r, &id, n->file.size);
-	/* write index */
-	rc = sd_writeindex(r, &n->file, blob, &index);
-	if (ssunlikely(rc == -1))
-		goto e1;
-	/* close seal */
-	rc = sd_seal(r, &n->file, blob, &index, seal);
-	if (ssunlikely(rc == -1))
-		goto e1;
-	if (blob) {
-		rc = ss_blobfit(blob);
+		goto e0;
+
+	sdio io;
+	sd_ioinit(&io);
+	if (i->scheme.direct_io) {
+		rc = sd_ioprepare(&io, r,
+		                  i->scheme.direct_io,
+		                  i->scheme.direct_io_page_size,
+		                  i->scheme.direct_io_buffer_size);
 		if (ssunlikely(rc == -1))
 			goto e1;
 	}
-	if (i->scheme->mmap) {
+	rc = sd_buildbegin(&build, r,
+	                   i->scheme.compaction.node_page_checksum,
+	                   i->scheme.compression,
+	                   i->scheme.compression_if);
+	if (ssunlikely(rc == -1))
+		goto e1;
+	sd_buildend(&build, r);
+	rc = sd_buildindex_add(&build_index, r, &build, 0);
+	if (ssunlikely(rc == -1))
+		goto e1;
+
+	/* write page */
+	rc = sd_writepage(r, &n->file, &io, &build);
+	if (ssunlikely(rc == -1))
+		goto e1;
+	uint32_t align = 0;
+	if (i->scheme.direct_io)
+		align = i->scheme.direct_io_page_size;
+	rc = sd_buildindex_end(&build_index, r, align, sd_iosize(&io, &n->file));
+	if (ssunlikely(rc == -1))
+		goto e1;
+
+	/* write index */
+	rc = sd_indexcopy_buf(&index, r, &build_index.v, &build_index.m);
+	if (ssunlikely(rc == -1))
+		goto e1;
+	rc = sd_writeindex(r, &n->file, &io, &index);
+	if (ssunlikely(rc == -1))
+		goto e1;
+	if (i->scheme.mmap) {
 		rc = si_nodemap(n, r);
 		if (ssunlikely(rc == -1))
 			goto e1;
 	}
-	si_branchset(&n->self, &index);
+	n->index = index;
 
-	sd_buildcommit(&build, r);
+	sd_iofree(&io, r);
 	sd_buildfree(&build, r);
+	sd_buildindex_free(&build_index, r);
 	return n;
 e1:
+	sd_iofree(&io, r);
 	sd_indexfree(&index, r);
 	sd_buildfree(&build, r);
+	sd_buildindex_free(&build_index, r);
 e0:
 	si_nodefree(n, r, 0);
 	return NULL;
@@ -130,20 +130,23 @@ e0:
 static inline int
 si_deploy(si *i, sr *r, int create_directory)
 {
+	/* create directory */
 	int rc;
 	if (sslikely(create_directory)) {
-		rc = ss_filemkdir(i->scheme->path);
+		rc = ss_vfsmkdir(r->vfs, i->scheme.path, 0755);
 		if (ssunlikely(rc == -1)) {
 			sr_malfunction(r->e, "directory '%s' create error: %s",
-			               i->scheme->path, strerror(errno));
+			               i->scheme.path, strerror(errno));
 			return -1;
 		}
 	}
-	rc = si_schemedeploy(i->scheme, r);
+	/* create scheme file */
+	rc = si_schemedeploy(&i->scheme, r);
 	if (ssunlikely(rc == -1)) {
 		sr_malfunction_set(r->e);
 		return -1;
 	}
+	/* create initial node */
 	sinode *n = si_bootstrap(i, 0);
 	if (ssunlikely(n == NULL))
 		return -1;
@@ -151,20 +154,23 @@ si_deploy(si *i, sr *r, int create_directory)
 	             si_nodefree(n, r, 0);
 	             sr_malfunction(r->e, "%s", "error injection");
 	             return -1);
-	rc = si_nodecomplete(n, r, i->scheme);
+	rc = si_noderename_complete(n, r, &i->scheme);
 	if (ssunlikely(rc == -1)) {
+		si_nodefree(n, r, 1);
+		return -1;
 	}
 	si_insert(i, n);
-	si_plannerupdate(&i->p, SI_COMPACT|SI_BRANCH, n);
+	si_plannerupdate(&i->p, n);
 	return 1;
 }
 
-static inline ssize_t
-si_processid(char **str) {
+static inline int64_t
+si_processid(char **str)
+{
 	char *s = *str;
 	size_t v = 0;
 	while (*s && *s != '.') {
-		if (ssunlikely(!isdigit(*s)))
+		if (ssunlikely(! isdigit(*s)))
 			return -1;
 		v = (v * 10) + *s - '0';
 		s++;
@@ -174,19 +180,23 @@ si_processid(char **str) {
 }
 
 static inline int
-si_process(char *name, uint32_t *nsn, uint32_t *parent)
+si_process(char *name, uint64_t *nsn, uint64_t *parent)
 {
 	/* id.db */
 	/* id.id.db.incomplete */
 	/* id.id.db.seal */
+	/* id.id.db.gc */
 	char *token = name;
-	ssize_t id = si_processid(&token);
+	int64_t id = si_processid(&token);
 	if (ssunlikely(id == -1))
 		return -1;
 	*parent = id;
 	*nsn = id;
 	if (strcmp(token, ".db") == 0)
 		return SI_RDB;
+	else
+	if (strcmp(token, ".db.gc") == 0)
+		return SI_RDB_REMOVE;
 	if (ssunlikely(*token != '.'))
 		return -1;
 	token++;
@@ -205,18 +215,18 @@ si_process(char *name, uint32_t *nsn, uint32_t *parent)
 static inline int
 si_trackdir(sitrack *track, sr *r, si *i)
 {
-	DIR *dir = opendir(i->scheme->path);
+	DIR *dir = opendir(i->scheme.path);
 	if (ssunlikely(dir == NULL)) {
 		sr_malfunction(r->e, "directory '%s' open error: %s",
-		               i->scheme->path, strerror(errno));
+		               i->scheme.path, strerror(errno));
 		return -1;
 	}
 	struct dirent *de;
 	while ((de = readdir(dir))) {
 		if (ssunlikely(de->d_name[0] == '.'))
 			continue;
-		uint32_t id_parent = 0;
-		uint32_t id = 0;
+		uint64_t id_parent = 0;
+		uint64_t id = 0;
 		int rc = si_process(de->d_name, &id, &id_parent);
 		if (ssunlikely(rc == -1))
 			continue; /* skip unknown file */
@@ -232,18 +242,18 @@ si_trackdir(sitrack *track, sr *r, si *i)
 			 * incomplete compaction process */
 			head = si_trackget(track, id_parent);
 			if (sslikely(head == NULL)) {
-				head = si_nodenew(r);
+				head = si_nodenew(r, id_parent, UINT64_MAX);
 				if (ssunlikely(head == NULL))
 					goto error;
-				head->self.id.id = id_parent;
 				head->recover = SI_RDB_UNDEF;
 				si_trackset(track, head);
 			}
 			head->recover |= rc;
 			/* remove any incomplete file made during compaction */
 			if (rc == SI_RDB_DBI) {
-				ss_pathAB(&path, i->scheme->path, id_parent, id, ".db.incomplete");
-				rc = ss_fileunlink(path.path);
+				ss_pathcompound(&path, i->scheme.path, id_parent, id,
+				                ".db.incomplete");
+				rc = ss_vfsunlink(r->vfs, path.path);
 				if (ssunlikely(rc == -1)) {
 					sr_malfunction(r->e, "db file '%s' unlink error: %s",
 					               path.path, strerror(errno));
@@ -253,12 +263,13 @@ si_trackdir(sitrack *track, sr *r, si *i)
 			}
 			assert(rc == SI_RDB_DBSEAL);
 			/* recover 'sealed' node */
-			node = si_nodenew(r);
+			node = si_nodenew(r, id, id_parent);
 			if (ssunlikely(node == NULL))
 				goto error;
 			node->recover = SI_RDB_DBSEAL;
-			ss_pathAB(&path, i->scheme->path, id_parent, id, ".db.seal");
-			rc = si_nodeopen(node, r, i->scheme, &path);
+			ss_pathcompound(&path, i->scheme.path, id_parent, id,
+			                ".db.seal");
+			rc = si_nodeopen(node, r, &i->scheme, &path);
 			if (ssunlikely(rc == -1)) {
 				si_nodefree(node, r, 0);
 				goto error;
@@ -267,16 +278,26 @@ si_trackdir(sitrack *track, sr *r, si *i)
 			si_trackmetrics(track, node);
 			continue;
 		}
+		case SI_RDB_REMOVE:
+			ss_path(&path, i->scheme.path, id, ".db.gc");
+			rc = ss_vfsunlink(r->vfs, ss_pathof(&path));
+			if (ssunlikely(rc == -1)) {
+				sr_malfunction(r->e, "db file '%s' unlink error: %s",
+				               ss_pathof(&path), strerror(errno));
+				goto error;
+			}
+			continue;
 		}
 		assert(rc == SI_RDB);
 
+
 		/* recover node */
-		node = si_nodenew(r);
+		node = si_nodenew(r, id, id_parent);
 		if (ssunlikely(node == NULL))
 			goto error;
 		node->recover = SI_RDB;
-		ss_pathA(&path, i->scheme->path, id, ".db");
-		rc = si_nodeopen(node, r, i->scheme, &path);
+		ss_path(&path, i->scheme.path, id, ".db");
+		rc = si_nodeopen(node, r, &i->scheme, &path);
 		if (ssunlikely(rc == -1)) {
 			si_nodefree(node, r, 0);
 			goto error;
@@ -289,12 +310,7 @@ si_trackdir(sitrack *track, sr *r, si *i)
 			si_trackset(track, node);
 		} else {
 			/* replace a node previously created by a
-			 * incomplete compaction. */
-			if (! (head->recover & SI_RDB_UNDEF)) {
-				sr_malfunction(r->e, "corrupted database repository: %s",
-				               i->scheme->path);
-				goto error;
-			}
+			 * incomplete compaction */
 			si_trackreplace(track, head, node);
 			head->recover &= ~SI_RDB_UNDEF;
 			node->recover |= head->recover;
@@ -326,14 +342,14 @@ si_trackvalidate(sitrack *track, ssbuf *buf, sr *r, si *i)
 		case SI_RDB|SI_RDB_DBSEAL:
 		case SI_RDB_UNDEF|SI_RDB_DBSEAL: {
 			/* match and remove any leftover ancestor */
-			sinode *ancestor = si_trackget(track, n->self.id.parent);
+			sinode *ancestor = si_trackget(track, n->id_parent);
 			if (ancestor && (ancestor != n))
 				ancestor->recover |= SI_RDB_REMOVE;
 			break;
 		}
 		case SI_RDB_DBSEAL: {
 			/* find parent */
-			sinode *parent = si_trackget(track, n->self.id.parent);
+			sinode *parent = si_trackget(track, n->id_parent);
 			if (parent) {
 				/* schedule node for removal, if has incomplete merges */
 				if (parent->recover & SI_RDB_DBI)
@@ -343,7 +359,7 @@ si_trackvalidate(sitrack *track, ssbuf *buf, sr *r, si *i)
 			}
 			if (! (n->recover & SI_RDB_REMOVE)) {
 				/* complete node */
-				int rc = si_nodecomplete(n, r, i->scheme);
+				int rc = si_noderename_complete(n, r, &i->scheme);
 				if (ssunlikely(rc == -1))
 					return -1;
 				n->recover = SI_RDB;
@@ -353,7 +369,7 @@ si_trackvalidate(sitrack *track, ssbuf *buf, sr *r, si *i)
 		default:
 			/* corrupted states */
 			return sr_malfunction(r->e, "corrupted database repository: %s",
-			                      i->scheme->path);
+			                      i->scheme.path);
 		}
 		p = ss_rbprev(&track->i, p);
 	}
@@ -388,7 +404,7 @@ si_recovercomplete(sitrack *track, sr *r, si *index, ssbuf *buf)
 		}
 		n->recover = SI_RDB;
 		si_insert(index, n);
-		si_plannerupdate(&index->p, SI_COMPACT|SI_BRANCH, n);
+		si_plannerupdate(&index->p, n);
 		ss_iternext(ss_bufiterref, &i);
 	}
 	return 0;
@@ -426,47 +442,17 @@ error:
 	return -1;
 }
 
-static inline int
-si_recoverdrop(si *i, sr *r)
-{
-	char path[1024];
-	snprintf(path, sizeof(path), "%s/drop", i->scheme->path);
-	int rc = ss_fileexists(path);
-	if (sslikely(! rc))
-		return 0;
-	if (i->scheme->path_fail_on_drop) {
-		sr_malfunction(r->e, "attempt to recover a dropped database: %s:",
-		               i->scheme->path);
-		return -1;
-	}
-	rc = si_droprepository(i->scheme, r, 0);
-	if (ssunlikely(rc == -1))
-		return -1;
-	return 1;
-}
-
 int si_recover(si *i)
 {
-	sr *r = i->r;
-	int exist = ss_fileexists(i->scheme->path);
+	sr *r = &i->r;
+	int exist = ss_vfsexists(r->vfs, i->scheme.path);
 	if (exist == 0)
 		goto deploy;
-	if (i->scheme->path_fail_on_exists) {
-		sr_error(r->e, "directory '%s' already exists", i->scheme->path);
-		return -1;
-	}
-	int rc = si_recoverdrop(i, r);
-	switch (rc) {
-	case -1: return -1;
-	case  1: goto deploy;
-	}
-	rc = si_schemerecover(i->scheme, r);
+	int rc;
+	rc = si_schemerecover(&i->scheme, r);
 	if (ssunlikely(rc == -1))
 		return -1;
-	r->scheme = &i->scheme->scheme;
-	r->compression = i->scheme->compression_if;
-	r->fmt = i->scheme->fmt;
-	r->fmt_storage = i->scheme->fmt_storage;
+	r->scheme = &i->scheme.scheme;
 	rc = si_recoverindex(i, r);
 	if (sslikely(rc <= 0))
 		return rc;

@@ -9,9 +9,6 @@
  * BSD License
 */
 
-int se_recoverbegin(sedb*);
-int se_recoverend(sedb*);
 int se_recover(se*);
-int se_recover_repository(se*);
 
 #endif

@@ -9,11 +9,8 @@
  * BSD License
 */
 
-#include <sv.h>
 #include <sv_v.h>
-#include <sv_compare.h>
-#include <sv_updatev.h>
-#include <sv_update.h>
+#include <sv_upsert.h>
 #include <sv_log.h>
 #include <sv_merge.h>
 #include <sv_mergeiter.h>

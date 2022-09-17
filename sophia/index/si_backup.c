@@ -10,6 +10,7 @@
 #include <libss.h>
 #include <libsf.h>
 #include <libsr.h>
+#include <libso.h>
 #include <libsv.h>
 #include <libsd.h>
 #include <libsi.h>
@@ -17,19 +18,19 @@
 static inline int
 si_backupend(si *index, sdc *c, siplan *plan)
 {
-	sr *r = index->r;
+	sr *r = &index->r;
 	/* copy index scheme file */
 	char src[PATH_MAX];
-	snprintf(src, sizeof(src), "%s/scheme", index->scheme->path);
+	snprintf(src, sizeof(src), "%s/scheme", index->scheme.path);
 
 	char dst[PATH_MAX];
 	snprintf(dst, sizeof(dst), "%s/%" PRIu32 ".incomplete/%s/scheme",
-	         index->scheme->path_backup,
+	         index->scheme.path_backup,
 	         (uint32_t)plan->a,
-	         index->scheme->name);
+	         index->scheme.name);
 
 	/* prepare buffer */
-	ssize_t size = ss_filesize(src);
+	ssize_t size = ss_vfssize(r->vfs, src);
 	if (ssunlikely(size == -1)) {
 		sr_error(r->e, "backup db file '%s' read error: %s",
 		         src, strerror(errno));
@@ -41,8 +42,8 @@ si_backupend(si *index, sdc *c, siplan *plan)
 
 	/* read scheme file */
 	ssfile file;
-	ss_fileinit(&file, r->a);
-	rc = ss_fileopen(&file, src);
+	ss_fileinit(&file, r->vfs);
+	rc = ss_fileopen(&file, src, 0);
 	if (ssunlikely(rc == -1)) {
 		sr_error(r->e, "backup db file '%s' open error: %s",
 		         src, strerror(errno));
@@ -58,7 +59,8 @@ si_backupend(si *index, sdc *c, siplan *plan)
 	ss_fileclose(&file);
 
 	/* write scheme file */
-	rc = ss_filenew(&file, dst);
+	ss_fileinit(&file, r->vfs);
+	rc = ss_filenew(&file, dst, 0);
 	if (ssunlikely(rc == -1)) {
 		sr_error(r->e, "backup db file '%s' create error: %s",
 		         dst, strerror(errno));
@@ -71,7 +73,7 @@ si_backupend(si *index, sdc *c, siplan *plan)
 		ss_fileclose(&file);
 		return -1;
 	}
-	/* sync? */
+	ss_fileadvise(&file, 0, 0, file.size);
 	rc = ss_fileclose(&file);
 	if (ssunlikely(rc == -1)) {
 		sr_error(r->e, "backup db file '%s' close error: %s",
@@ -88,17 +90,16 @@ si_backupend(si *index, sdc *c, siplan *plan)
 
 int si_backup(si *index, sdc *c, siplan *plan)
 {
-	sr *r = index->r;
-	sd_creset(c, r);
+	sr *r = &index->r;
 	if (ssunlikely(plan->plan == SI_BACKUPEND))
 		return si_backupend(index, c, plan);
 
 	sinode *node = plan->node;
 	char dst[PATH_MAX];
 	snprintf(dst, sizeof(dst), "%s/%" PRIu32 ".incomplete/%s",
-	         index->scheme->path_backup,
+	         index->scheme.path_backup,
 	         (uint32_t)plan->a,
-	         index->scheme->name);
+	         index->scheme.name);
 
 	/* read origin file */
 	int rc = si_noderead(node, r, &c->c);
@@ -107,10 +108,10 @@ int si_backup(si *index, sdc *c, siplan *plan)
 
 	/* copy */
 	sspath path;
-	ss_pathA(&path, dst, node->self.id.id, ".db");
+	ss_path(&path, dst, node->id, ".db");
 	ssfile file;
-	ss_fileinit(&file, r->a);
-	rc = ss_filenew(&file, path.path);
+	ss_fileinit(&file, r->vfs);
+	rc = ss_filenew(&file, path.path, 0);
 	if (ssunlikely(rc == -1)) {
 		sr_error(r->e, "backup db file '%s' create error: %s",
 		         path.path, strerror(errno));
@@ -123,7 +124,7 @@ int si_backup(si *index, sdc *c, siplan *plan)
 		ss_fileclose(&file);
 		return -1;
 	}
-	/* sync? */
+	ss_fileadvise(&file, 0, 0, file.size);
 	rc = ss_fileclose(&file);
 	if (ssunlikely(rc == -1)) {
 		sr_error(r->e, "backup db file '%s' close error: %s",

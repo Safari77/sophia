@@ -19,32 +19,24 @@ static void
 sv_v_kv(void)
 {
 	uint32_t key = 123;
-	uint32_t value = 321;
+	char value[] = "hello";
 
-	sfv pv;
-	pv.key = (char*)&key;
-	pv.r.size = sizeof(key);
-	pv.r.offset = 0;
+	sfv pv[8];
+	memset(pv, 0, sizeof(pv));
+	pv[0].pointer = (char*)&key;
+	pv[0].size = sizeof(key);
+	pv[1].pointer = value;
+	pv[1].size = sizeof(value);
 
-	svv *vv = sv_vbuild(&st_r.r, &pv, 1, (char*)&value, sizeof(value));
-	t( vv != NULL );
-	vv->flags = 0;
-	vv->lsn = 10;
-	sv v;
-	sv_init(&v, &sv_vif, vv, NULL);
+	svv *v = sv_vbuild(&st_r.r, pv);
+	t( v != NULL );
 
-	t( sv_flags(&v) == 0 );
-	t( sv_lsn(&v) == 10 );
-	sv_lsnset(&v, 8);
-	t( sv_lsn(&v) == 8 );
+	t( sf_flags(st_r.r.scheme, sv_vpointer(v)) == 0 );
 
-	t( *(uint32_t*)sf_key(sv_pointer(&v), 0) == key );
-	t( sf_keysize(sv_pointer(&v), 0) == sizeof(key) );
+	t( *(uint32_t*)sf_field(&st_r.scheme, 0, sv_vpointer(v), &st_r.size) == key );
+	t( sf_fieldsize(&st_r.scheme, 0, sv_vpointer(v)) == sizeof(key) );
 
-	t( *(uint32_t*)sf_value(SF_KV, sv_pointer(&v), st_r.scheme.count) == value );
-	t( sf_valuesize(SF_KV, sv_pointer(&v), sv_size(&v), st_r.scheme.count) == sizeof(value) );
-
-	sv_vfree(&st_r.a, vv);
+	sv_vunref(&st_r.r, v);
 }
 
 stgroup *sv_v_group(void)

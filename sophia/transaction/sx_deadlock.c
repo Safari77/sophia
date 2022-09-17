@@ -11,6 +11,7 @@
 #include <libsf.h>
 #include <libsr.h>
 #include <libsv.h>
+#include <libso.h>
 #include <libsx.h>
 
 static inline int
@@ -21,11 +22,11 @@ sx_deadlock_in(sxmanager *m, sslist *mark, sx *t, sx *p)
 	ss_listappend(mark, &p->deadlock);
 	ssiter i;
 	ss_iterinit(ss_bufiter, &i);
-	ss_iteropen(ss_bufiter, &i, &p->log.buf, sizeof(svlogv));
+	ss_iteropen(ss_bufiter, &i, &p->log->buf, sizeof(svlogv));
 	for (; ss_iterhas(ss_bufiter, &i); ss_iternext(ss_bufiter, &i))
 	{
 		svlogv *lv = ss_iterof(ss_bufiter, &i);
-		sxv *v = lv->v.v;
+		sxv *v = lv->ptr;
 		if (v->prev == NULL)
 			continue;
 		do {
@@ -59,11 +60,11 @@ int sx_deadlock(sx *t)
 	ss_listinit(&mark);
 	ssiter i;
 	ss_iterinit(ss_bufiter, &i);
-	ss_iteropen(ss_bufiter, &i, &t->log.buf, sizeof(svlogv));
+	ss_iteropen(ss_bufiter, &i, &t->log->buf, sizeof(svlogv));
 	while (ss_iterhas(ss_bufiter, &i))
 	{
 		svlogv *lv = ss_iterof(ss_bufiter, &i);
-		sxv *v = lv->v.v;
+		sxv *v = lv->ptr;
 		if (v->prev == NULL) {
 			ss_iternext(ss_bufiter, &i);
 			continue;

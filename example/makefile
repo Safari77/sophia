@@ -2,30 +2,33 @@
 # sophia examples
 #
 
-all: validate clean set-get-delete transaction batch cursor snapshot
+all: validate clean crud multipart upsert transaction cursor comparator
 validate:
 	@if [ ! -f ../sophia.o ]; then \
 		echo "Please build sophia first."; \
 		echo ""; \
 		exit 1; \
 	fi
-set-get-delete:
+crud:
 	gcc crud.c ../libsophia.a -I../ -pedantic -std=c99 -Wall -Wextra -pthread -g -o crud
+multipart:
+	gcc multipart.c ../libsophia.a -I../ -pedantic -std=c99 -Wall -Wextra -pthread -g -o multipart
+upsert:
+	gcc upsert.c ../libsophia.a -I../ -pedantic -std=c99 -Wall -Wextra -pthread -g -o upsert
 transaction:
 	gcc transaction.c ../libsophia.a -I../ -pedantic -std=c99 -Wall -Wextra -pthread -g -o transaction
-batch:
-	gcc batch.c ../libsophia.a -I../ -pedantic -std=c99 -Wall -Wextra -pthread -g -o batch
 cursor:
 	gcc cursor.c ../libsophia.a -I../ -pedantic -std=c99 -Wall -Wextra -pthread -g -o cursor
-snapshot:
-	gcc snapshot.c ../libsophia.a -I../ -pedantic -std=c99 -Wall -Wextra -pthread -g -o snapshot
+comparator:
+	gcc comparator.c ../libsophia.a -I../ -pedantic -std=c99 -Wall -Wextra -pthread -g -o comparator
 clean:
 	@rm -rf _test
 	@rm -f crud
+	@rm -f multipart
+	@rm -f upsert
 	@rm -f transaction
-	@rm -f batch
 	@rm -f cursor
-	@rm -f snapshot
+	@rm -f comparator
 
 .PHONY: all validate clean
 

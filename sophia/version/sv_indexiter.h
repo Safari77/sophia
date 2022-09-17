@@ -12,22 +12,20 @@
 typedef struct svindexiter svindexiter;
 
 struct svindexiter {
-	svindex *index;
+	svindex  *index;
 	ssrbnode *v;
-	svv *vcur;
-	sv current;
-	ssorder order;
+	svv      *vcur;
+	ssorder   order;
 } sspacked;
 
 static inline int
-sv_indexiter_open(ssiter *i, sr *r, svindex *index, ssorder o, void *key, int keysize)
+sv_indexiter_open(ssiter *i, sr *r, svindex *index, ssorder o, char *key)
 {
 	svindexiter *ii = (svindexiter*)i->priv;
-	ii->index   = index;
-	ii->order   = o;
-	ii->v       = NULL;
-	ii->vcur    = NULL;
-	memset(&ii->current, 0, sizeof(ii->current));
+	ii->index = index;
+	ii->order = o;
+	ii->v     = NULL;
+	ii->vcur  = NULL;
 	int rc;
 	int eq = 0;
 	switch (ii->order) {
@@ -37,7 +35,7 @@ sv_indexiter_open(ssiter *i, sr *r, svindex *index, ssorder o, void *key, int ke
 			ii->v = ss_rbmax(&ii->index->i);
 			break;
 		}
-		rc = sv_indexmatch(&ii->index->i, r->scheme, key, keysize, &ii->v);
+		rc = sv_indexmatch(&ii->index->i, r->scheme, key, 0, &ii->v);
 		if (ii->v == NULL)
 			break;
 		switch (rc) {
@@ -57,7 +55,7 @@ sv_indexiter_open(ssiter *i, sr *r, svindex *index, ssorder o, void *key, int ke
 			ii->v = ss_rbmin(&ii->index->i);
 			break;
 		}
-		rc = sv_indexmatch(&ii->index->i, r->scheme, key, keysize, &ii->v);
+		rc = sv_indexmatch(&ii->index->i, r->scheme, key, 0, &ii->v);
 		if (ii->v == NULL)
 			break;
 		switch (rc) {
@@ -76,7 +74,6 @@ sv_indexiter_open(ssiter *i, sr *r, svindex *index, ssorder o, void *key, int ke
 	ii->vcur = NULL;
 	if (ii->v) {
 		ii->vcur = sscast(ii->v, svv, node);
-		sv_init(&ii->current, &sv_vif, ii->vcur, NULL);
 	}
 	return eq;
 }
@@ -98,7 +95,7 @@ sv_indexiter_of(ssiter *i)
 	svindexiter *ii = (svindexiter*)i->priv;
 	if (ssunlikely(ii->v == NULL))
 		return NULL;
-	return &ii->current;
+	return sv_vpointer(ii->vcur);
 }
 
 static inline void
@@ -111,7 +108,6 @@ sv_indexiter_next(ssiter *i)
 	svv *v = ii->vcur->next;
 	if (v) {
 		ii->vcur = v;
-		sv_init(&ii->current, &sv_vif, ii->vcur, NULL);
 		return;
 	}
 	switch (ii->order) {
@@ -125,10 +121,10 @@ sv_indexiter_next(ssiter *i)
 		break;
 	default: assert(0);
 	}
-	ii->vcur = NULL;
-	if (ii->v) {
+	if (sslikely(ii->v)) {
 		ii->vcur = sscast(ii->v, svv, node);
-		sv_init(&ii->current, &sv_vif, ii->vcur, NULL);
+	} else {
+		ii->vcur = NULL;
 	}
 }
 

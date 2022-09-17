@@ -25,8 +25,12 @@ transaction_md_set_commit(void)
 	t( sp_setstring(env, "log.path", st_r.conf->log_dir, 0) == 0 );
 	t( sp_setstring(env, "db", "t0", 0) == 0 );
 	t( sp_setstring(env, "db", "t1", 0) == 0 );
-	t( sp_setstring(env, "db.t0.index.key", "u32", 0) == 0 );
-	t( sp_setstring(env, "db.t1.index.key", "u32", 0) == 0 );
+	t( sp_setstring(env, "db.t0.scheme", "key", 0) == 0 );
+	t( sp_setstring(env, "db.t1.scheme", "key", 0) == 0 );
+	t( sp_setstring(env, "db.t0.scheme.key", "u32,key(0)", 0) == 0 );
+	t( sp_setstring(env, "db.t1.scheme.key", "u32,key(0)", 0) == 0 );
+	t( sp_setstring(env, "db.t0.scheme", "value", 0) == 0 );
+	t( sp_setstring(env, "db.t1.scheme", "value", 0) == 0 );
 	t( sp_setint(env, "db.t0.sync", 0) == 0 );
 	t( sp_setint(env, "db.t1.sync", 0) == 0 );
 
@@ -39,26 +43,26 @@ transaction_md_set_commit(void)
 	uint32_t key = 7;
 	void *tx = sp_begin(env);
 	t( tx != NULL );
-	void *o = sp_object(t0);
+	void *o = sp_document(t0);
 	t( o != NULL );
 	t( sp_setstring(o, "key", &key, sizeof(key)) == 0 );
 	t( sp_setstring(o, "value", &key, sizeof(key)) == 0 );
 	t( sp_set(tx, o) == 0 );
-	o = sp_object(t1);
+	o = sp_document(t1);
 	t( o != NULL );
 	t( sp_setstring(o, "key", &key, sizeof(key)) == 0 );
 	t( sp_setstring(o, "value", &key, sizeof(key)) == 0 );
 	t( sp_set(tx, o) == 0 );
 	t( sp_commit(tx) == 0 );
 
-	o = sp_object(t0);
+	o = sp_document(t0);
 	t( sp_setstring(o, "key", &key, sizeof(key)) == 0 );
 	o = sp_get(t0, o);
 	t( o != NULL );
 	t( *(int*)sp_getstring(o, "value", NULL) == key );
 	sp_destroy(o);
 
-	o = sp_object(t1);
+	o = sp_document(t1);
 	t( sp_setstring(o, "key", &key, sizeof(key)) == 0 );
 	o = sp_get(t1, o);
 	t( o != NULL );
@@ -78,8 +82,12 @@ transaction_md_set_rollback(void)
 	t( sp_setstring(env, "log.path", st_r.conf->log_dir, 0) == 0 );
 	t( sp_setstring(env, "db", "t0", 0) == 0 );
 	t( sp_setstring(env, "db", "t1", 0) == 0 );
-	t( sp_setstring(env, "db.t0.index.key", "u32", 0) == 0 );
-	t( sp_setstring(env, "db.t1.index.key", "u32", 0) == 0 );
+	t( sp_setstring(env, "db.t0.scheme", "key", 0) == 0 );
+	t( sp_setstring(env, "db.t1.scheme", "key", 0) == 0 );
+	t( sp_setstring(env, "db.t0.scheme.key", "u32,key(0)", 0) == 0 );
+	t( sp_setstring(env, "db.t1.scheme.key", "u32,key(0)", 0) == 0 );
+	t( sp_setstring(env, "db.t0.scheme", "value", 0) == 0 );
+	t( sp_setstring(env, "db.t1.scheme", "value", 0) == 0 );
 	t( sp_setint(env, "db.t0.sync", 0) == 0 );
 	t( sp_setint(env, "db.t1.sync", 0) == 0 );
 
@@ -92,24 +100,24 @@ transaction_md_set_rollback(void)
 	uint32_t key = 7;
 	void *tx = sp_begin(env);
 	t( tx != NULL );
-	void *o = sp_object(t0);
+	void *o = sp_document(t0);
 	t( o != NULL );
 	t( sp_setstring(o, "key", &key, sizeof(key)) == 0 );
 	t( sp_setstring(o, "value", &key, sizeof(key)) == 0 );
 	t( sp_set(tx, o) == 0 );
-	o = sp_object(t1);
+	o = sp_document(t1);
 	t( o != NULL );
 	t( sp_setstring(o, "key", &key, sizeof(key)) == 0 );
 	t( sp_setstring(o, "value", &key, sizeof(key)) == 0 );
 	t( sp_set(tx, o) == 0 );
 	t( sp_destroy(tx) == 0 );
 
-	o = sp_object(t0);
+	o = sp_document(t0);
 	t( sp_setstring(o, "key", &key, sizeof(key)) == 0 );
 	o = sp_get(t0, o);
 	t( o == NULL );
 
-	o = sp_object(t1);
+	o = sp_document(t1);
 	t( sp_setstring(o, "key", &key, sizeof(key)) == 0 );
 	o = sp_get(t1, o);
 	t( o == NULL );

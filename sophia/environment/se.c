@@ -12,66 +12,94 @@
 #include <libsr.h>
 #include <libso.h>
 #include <libsv.h>
-#include <libsl.h>
+#include <libsw.h>
 #include <libsd.h>
 #include <libsi.h>
 #include <libsx.h>
 #include <libsy.h>
+#include <libsc.h>
 #include <libse.h>
+
+static void*
+se_worker(void *arg)
+{
+	ssthread *self = arg;
+	se *e = self->arg;
+	ss_thread_setname(self, "worker");
+	ss_vfsioprio_low(&e->vfs);
+	scworker *w = sc_workerpool_pop(&e->scheduler.wp, &e->r);
+	if (ssunlikely(w == NULL))
+		return NULL;
+	for (;;)
+	{
+		int rc = se_active(e);
+		if (ssunlikely(rc == 0))
+			break;
+		rc = sc_step(&e->scheduler, w, sx_vlsn(&e->xm));
+		if (ssunlikely(rc == -1))
+			break;
+		if (ssunlikely(rc == 0))
+			ss_sleep(10000000); /* 10ms */
+	}
+	sc_workerpool_push(&e->scheduler.wp, w);
+	return NULL;
+}
 
 static int
 se_open(so *o)
 {
 	se *e = se_cast(o, se*, SE);
-	int status = se_status(&e->status);
-	if (status == SE_RECOVER) {
-		assert(e->meta.two_phase_recover == 1);
-		goto online;
-	}
-	if (status != SE_OFFLINE)
+	int status = sr_status(&e->status);
+	if (status != SR_OFFLINE)
 		return -1;
+
+	/* switch to recover phase */
+	sr_statusset(&e->status, SR_RECOVER);
+
+	sr_log(&e->log, "sophia %d.%d git: %s",
+	       SR_VERSION_A - '0',
+	       SR_VERSION_B - '0',
+	       SR_VERSION_COMMIT);
+
+	/* validate configuration */
 	int rc;
-	rc = se_metavalidate(&e->meta);
+	rc = se_confvalidate(&e->conf);
 	if (ssunlikely(rc == -1))
 		return -1;
-	se_statusset(&e->status, SE_RECOVER);
 
-	/* set memory quota (disable during recovery) */
-	ss_quotaset(&e->quota, e->meta.memory_limit);
-	ss_quotaenable(&e->quota, 0);
+	/* prepare scheduler */
+	rc = sc_set(&e->scheduler, e->db.n);
+	if (ssunlikely(rc == -1))
+		return -1;
+	rc = sc_setbackup(&e->scheduler, e->rep_conf->path_backup);
+	if (ssunlikely(rc == -1))
+		return -1;
 
 	/* repository recover */
-	rc = se_recover_repository(e);
+	sr_log(&e->log, "recovering repository '%s'",
+	       e->rep_conf->path);
+	rc = sy_open(&e->rep, &e->r);
 	if (ssunlikely(rc == -1))
 		return -1;
+
 	/* databases recover */
-	sslist *i, *n;
-	ss_listforeach_safe(&e->db.list, i, n) {
+	sslist *i;
+	ss_listforeach(&e->db.list, i) {
 		so *o = sscast(i, so, link);
-		rc = so_open(o);
+		rc = se_dbopen(o);
 		if (ssunlikely(rc == -1))
 			return -1;
 	}
+
 	/* recover logpool */
 	rc = se_recover(e);
 	if (ssunlikely(rc == -1))
 		return -1;
-	if (e->meta.two_phase_recover)
-		return 0;
 
-online:
-	/* complete */
-	ss_listforeach_safe(&e->db.list, i, n) {
-		so *o = sscast(i, so, link);
-		rc = so_open(o);
-		if (ssunlikely(rc == -1))
-			return -1;
-	}
-	/* enable quota */
-	ss_quotaenable(&e->quota, 1);
-	se_statusset(&e->status, SE_ONLINE);
+	sr_statusset(&e->status, SR_ONLINE);
+
 	/* run thread-pool and scheduler */
-	rc = se_scheduler_run(&e->sched);
+	rc = sc_run(&e->scheduler, se_worker, e, e->conf.threads);
 	if (ssunlikely(rc == -1))
 		return -1;
 	return 0;
@@ -83,56 +111,47 @@ se_destroy(so *o)
 	se *e = se_cast(o, se*, SE);
 	int rcret = 0;
 	int rc;
-	se_statusset(&e->status, SE_SHUTDOWN);
-	rc = se_scheduler_shutdown(&e->sched);
+	sr_statusset(&e->status, SR_SHUTDOWN);
+	rc = sc_shutdown(&e->scheduler);
 	if (ssunlikely(rc == -1))
 		rcret = -1;
-	rc = so_listdestroy(&e->req);
+	rc = so_pooldestroy(&e->cursor);
 	if (ssunlikely(rc == -1))
 		rcret = -1;
-	rc = so_listdestroy(&e->reqactive);
+	rc = so_pooldestroy(&e->tx);
 	if (ssunlikely(rc == -1))
 		rcret = -1;
-	rc = so_listdestroy(&e->reqready);
+	rc = so_pooldestroy(&e->confcursor_kv);
 	if (ssunlikely(rc == -1))
 		rcret = -1;
-	rc = so_listdestroy(&e->cursor);
+	rc = so_pooldestroy(&e->confcursor);
 	if (ssunlikely(rc == -1))
 		rcret = -1;
-	rc = so_listdestroy(&e->tx);
+	sslist *i, *n;
+	ss_listforeach_safe(&e->db.list, i, n) {
+		so *db = sscast(i, so, link);
+		rc = se_dbdestroy(db);
+		if (ssunlikely(rc == -1))
+			rcret = -1;
+	}
+	rc = so_pooldestroy(&e->document);
 	if (ssunlikely(rc == -1))
 		rcret = -1;
-	rc = so_listdestroy(&e->snapshot);
-	if (ssunlikely(rc == -1))
-		rcret = -1;
-	rc = so_listdestroy(&e->metacursor);
-	if (ssunlikely(rc == -1))
-		rcret = -1;
-	rc = so_listdestroy(&e->db);
-	if (ssunlikely(rc == -1))
-		rcret = -1;
-	rc = so_listdestroy(&e->db_shutdown);
-	if (ssunlikely(rc == -1))
-		rcret = -1;
-	rc = sl_poolshutdown(&e->lp);
+	rc = sw_managershutdown(&e->wm);
 	if (ssunlikely(rc == -1))
 		rcret = -1;
 	rc = sy_close(&e->rep, &e->r);
 	if (ssunlikely(rc == -1))
 		rcret = -1;
 	sx_managerfree(&e->xm);
-	si_cachepool_free(&e->cachepool, &e->r);
-	se_metafree(&e->meta);
-	ss_quotafree(&e->quota);
+	ss_vfsfree(&e->vfs);
+	si_cachepool_free(&e->cachepool);
+	se_conffree(&e->conf);
 	ss_mutexfree(&e->apilock);
-	ss_mutexfree(&e->reqlock);
-	ss_condfree(&e->reqcond);
-	ss_spinlockfree(&e->dblock);
+
 	sr_seqfree(&e->seq);
-	ss_pagerfree(&e->pager);
-	ss_pagerfree(&e->pagersx);
-	se_statusfree(&e->status);
-	se_mark_destroyed(&e->o);
+	sr_statusfree(&e->status);
+	so_mark_destroyed(&e->o);
 	free(e);
 	return rcret;
 }
@@ -145,70 +164,27 @@ se_begin(so *o)
 }
 
 static void*
-se_poll(so *o)
-{
-	se *e = se_cast(o, se*, SE);
-	so *result;
-	if (e->meta.event_on_backup) {
-		ss_mutexlock(&e->sched.lock);
-		if (ssunlikely(e->sched.backup_events > 0)) {
-			e->sched.backup_events--;
-			sereq r;
-			se_reqinit(e, &r, SE_REQON_BACKUP, &e->o, NULL);
-			result = se_reqresult(&r, 1);
-			ss_mutexunlock(&e->sched.lock);
-			return result;
-		}
-		ss_mutexunlock(&e->sched.lock);
-	}
-	sereq *req = se_reqdispatch_ready(e);
-	if (req == NULL)
-		return NULL;
-	result = se_reqresult(req, 1);
-	so_destroy(&req->o);
-	return result;
-}
-
-static int
-se_error(so *o)
-{
-	se *e = se_cast(o, se*, SE);
-	int status = sr_errorof(&e->error);
-	if (status == SR_ERROR_MALFUNCTION)
-		return 1;
-	status = se_status(&e->status);
-	if (status == SE_MALFUNCTION)
-		return 1;
-	return 0;
-}
-
-static void*
 se_cursor(so *o)
 {
 	se *e = se_cast(o, se*, SE);
-	return se_cursornew(e, 0);
+	return se_cursornew(e, UINT64_MAX);
 }
 
 static soif seif =
 {
 	.open         = se_open,
 	.destroy      = se_destroy,
-	.error        = se_error,
-	.object       = NULL,
-	.asynchronous = NULL,
-	.poll         = se_poll,
-	.drop         = NULL,
-	.setobject    = se_metaset_object,
-	.setstring    = se_metaset_string,
-	.setint       = se_metaset_int,
-	.getobject    = se_metaget_object,
-	.getstring    = se_metaget_string,
-	.getint       = se_metaget_int,
+	.free         = NULL,
+	.document     = NULL,
+	.setstring    = se_confset_string,
+	.setint       = se_confset_int,
+	.getobject    = se_confget_object,
+	.getstring    = se_confget_string,
+	.getint       = se_confget_int,
 	.set          = NULL,
-	.update       = NULL,
+	.upsert       = NULL,
 	.del          = NULL,
 	.get          = NULL,
-	.batch        = NULL,
 	.begin        = se_begin,
 	.prepare      = NULL,
 	.commit       = NULL,
@@ -222,60 +198,39 @@ so *se_new(void)
 		return NULL;
 	memset(e, 0, sizeof(*e));
 	so_init(&e->o, &se_o[SE], &seif, &e->o, &e->o /* self */);
-	se_statusinit(&e->status);
-	se_statusset(&e->status, SE_OFFLINE);
-	ss_pagerinit(&e->pager, 10, 4096);
-	int rc = ss_pageradd(&e->pager);
-	if (ssunlikely(rc == -1)) {
-		free(e);
-		return NULL;
-	}
-	ss_pagerinit(&e->pagersx, 10, 4096);
-	rc = ss_pageradd(&e->pagersx);
-	if (ssunlikely(rc == -1)) {
-		ss_pagerfree(&e->pager);
-		free(e);
-		return NULL;
-	}
+	sr_statusinit(&e->status);
+	sr_statusset(&e->status, SR_OFFLINE);
+	ss_vfsinit(&e->vfs, &ss_stdvfs);
 	ss_aopen(&e->a, &ss_stda);
-	ss_aopen(&e->a_db, &ss_slaba, &e->pager, sizeof(sedb));
-	ss_aopen(&e->a_v, &ss_slaba, &e->pager, sizeof(sev));
-	ss_aopen(&e->a_cursor, &ss_slaba, &e->pager, sizeof(secursor));
-	ss_aopen(&e->a_cachebranch, &ss_slaba, &e->pager, sizeof(sicachebranch));
-	ss_aopen(&e->a_cache, &ss_slaba, &e->pager, sizeof(sicache));
-	ss_aopen(&e->a_metacursor, &ss_slaba, &e->pager, sizeof(semetacursor));
-	ss_aopen(&e->a_metav, &ss_slaba, &e->pager, sizeof(semetav));
-	ss_aopen(&e->a_snapshot, &ss_slaba, &e->pager, sizeof(sesnapshot));
-	ss_aopen(&e->a_snapshotcursor, &ss_slaba, &e->pager, sizeof(sesnapshotcursor));
-	ss_aopen(&e->a_batch, &ss_slaba, &e->pager, sizeof(sebatch));
-	ss_aopen(&e->a_tx, &ss_slaba, &e->pager, sizeof(setx));
-	ss_aopen(&e->a_req, &ss_slaba, &e->pager, sizeof(sereq));
-	ss_aopen(&e->a_sxv, &ss_slaba, &e->pagersx, sizeof(sxv));
-	se_metainit(&e->meta, &e->o);
+	int rc;
+	rc = se_confinit(&e->conf, &e->o);
+	if (ssunlikely(rc == -1))
+		goto error;
+	so_poolinit(&e->document, 1024);
+	so_poolinit(&e->cursor, 512);
+	so_poolinit(&e->tx, 512);
+	so_poolinit(&e->confcursor, 2);
+	so_poolinit(&e->confcursor_kv, 1);
 	so_listinit(&e->db);
-	so_listinit(&e->db_shutdown);
-	so_listinit(&e->cursor);
-	so_listinit(&e->tx);
-	so_listinit(&e->snapshot);
-	so_listinit(&e->metacursor);
-	so_listinit(&e->req);
-	so_listinit(&e->reqready);
-	so_listinit(&e->reqactive);
 	ss_mutexinit(&e->apilock);
-	ss_mutexinit(&e->reqlock);
-	ss_condinit(&e->reqcond);
-	ss_spinlockinit(&e->dblock);
-	ss_quotainit(&e->quota);
 	sr_seqinit(&e->seq);
-	sr_errorinit(&e->error);
+	sr_loginit(&e->log);
+	sr_errorinit(&e->error, &e->log);
 	sscrcf crc = ss_crc32c_function();
-	sr_init(&e->r, &e->error, &e->a, &e->quota, &e->seq,
-	        SF_KV, SF_SRAW, NULL,
-	        &e->meta.scheme, &e->ei, crc, NULL);
+	sr_init(&e->r, &e->status, &e->log, &e->error, &e->a, NULL,
+	        &e->vfs, &e->seq, NULL, NULL,
+	        &e->ei, NULL, crc, NULL);
 	sy_init(&e->rep);
-	sl_poolinit(&e->lp, &e->r);
-	sx_managerinit(&e->xm, &e->r, &e->a_sxv);
-	si_cachepool_init(&e->cachepool, &e->a_cache, &e->a_cachebranch);
-	se_scheduler_init(&e->sched, &e->o);
+	e->rep_conf = sy_conf(&e->rep);
+	sw_managerinit(&e->wm, &e->r);
+	e->wm_conf = sw_conf(&e->wm);
+	sr_statxm_init(&e->xm_stat);
+	sx_managerinit(&e->xm, &e->seq, &e->a);
+	si_cachepool_init(&e->cachepool, &e->r);
+	sc_init(&e->scheduler, &e->r, &e->wm);
 	return &e->o;
+error:
+	sr_statusfree(&e->status);
+	free(e);
+	return NULL;
 }

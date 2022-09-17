@@ -9,94 +9,87 @@
  * BSD License
 */
 
-typedef struct sdc sdc;
 typedef struct sdcbuf sdcbuf;
+typedef struct sdc sdc;
 
 struct sdcbuf {
-	ssbuf a; /* decompression */
-	ssbuf b; /* transformation */
+	ssbuf  a; /* decompression */
+	ssbuf  b; /* transformation */
 	ssiter index_iter;
 	ssiter page_iter;
-	sdcbuf *next;
 };
 
 struct sdc {
+	sdio io;
 	sdbuild build;
-	svupdate update;
-	ssbuf a;        /* result */
-	ssbuf b;        /* redistribute buffer */
-	ssbuf c;        /* file buffer */
-	ssbuf d;        /* page read buffer */
-	sdcbuf *head;   /* compression buffer list */
-	int count;
+	sdbuildindex build_index;
+	svupsert upsert;
+	ssbuf  a; /* result */
+	ssbuf  b; /* redistribute buffer */
+	ssbuf  c; /* file buffer */
+	ssbuf  d; /* page read buffer */
+	sdcbuf e; /* compression buffer list */
 };
 
 static inline void
 sd_cinit(sdc *sc)
 {
-	sv_updateinit(&sc->update);
+	sd_ioinit(&sc->io);
+	sv_upsertinit(&sc->upsert);
 	sd_buildinit(&sc->build);
+	sd_buildindex_init(&sc->build_index);
 	ss_bufinit(&sc->a);
 	ss_bufinit(&sc->b);
 	ss_bufinit(&sc->c);
 	ss_bufinit(&sc->d);
-	sc->count = 0;
-	sc->head = NULL;
+	ss_bufinit(&sc->e.a);
+	ss_bufinit(&sc->e.b);
+	memset(&sc->e.index_iter, 0, sizeof(sc->e.index_iter));
+	memset(&sc->e.page_iter, 0, sizeof(sc->e.page_iter));
 }
 
 static inline void
 sd_cfree(sdc *sc, sr *r)
 {
+	sd_iofree(&sc->io, r);
 	sd_buildfree(&sc->build, r);
-	sv_updatefree(&sc->update, r);
+	sd_buildindex_free(&sc->build_index, r);
+	sv_upsertfree(&sc->upsert, r);
 	ss_buffree(&sc->a, r->a);
 	ss_buffree(&sc->b, r->a);
 	ss_buffree(&sc->c, r->a);
 	ss_buffree(&sc->d, r->a);
-	sdcbuf *b = sc->head;
-	sdcbuf *next;
-	while (b) {
-		next = b->next;
-		ss_buffree(&b->a, r->a);
-		ss_buffree(&b->b, r->a);
-		ss_free(r->a, b);
-		b = next;
-	}
+	ss_buffree(&sc->e.a, r->a);
+	ss_buffree(&sc->e.b, r->a);
 }
 
 static inline void
-sd_creset(sdc *sc, sr *r)
+sd_cgc(sdc *sc, sr *r, int wm)
 {
-	sd_buildreset(&sc->build, r);
-	sv_updatereset(&sc->update);
+	sd_buildgc(&sc->build, r, wm);
+	sd_buildindex_gc(&sc->build_index, r, wm);
+	sv_upsertgc(&sc->upsert, r, 600, 512);
+	ss_bufgc(&sc->a, r->a, wm);
+	ss_bufgc(&sc->b, r->a, wm);
+	ss_bufgc(&sc->c, r->a, wm);
+	ss_bufgc(&sc->d, r->a, wm);
+	ss_bufgc(&sc->e.a, r->a, wm);
+	ss_bufgc(&sc->e.b, r->a, wm);
+}
+
+static inline void
+sd_creset(sdc *sc, sr *r ssunused)
+{
+	sd_ioreset(&sc->io);
+	sd_buildreset(&sc->build);
+	sd_buildindex_reset(&sc->build_index);
+	sv_upsertreset(&sc->upsert);
 	ss_bufreset(&sc->a);
 	ss_bufreset(&sc->b);
 	ss_bufreset(&sc->c);
 	ss_bufreset(&sc->d);
-	sdcbuf *b = sc->head;
-	while (b) {
-		ss_bufreset(&b->a);
-		ss_bufreset(&b->b);
-		b = b->next;
-	}
-}
-
-static inline int
-sd_censure(sdc *c, sr *r, int count)
-{
-	if (c->count < count) {
-		while (count-- >= 0) {
-			sdcbuf *b = ss_malloc(r->a, sizeof(sdcbuf));
-			if (ssunlikely(b == NULL))
-				return -1;
-			ss_bufinit(&b->a);
-			ss_bufinit(&b->b);
-			b->next = c->head;
-			c->head = b;
-			c->count++;
-		}
-	}
-	return 0;
+	ss_bufreset(&sc->e.a);
+	ss_bufreset(&sc->e.b);
 }
 
 #endif

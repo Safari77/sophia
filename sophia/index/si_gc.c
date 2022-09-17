@@ -10,23 +10,17 @@
 #include <libss.h>
 #include <libsf.h>
 #include <libsr.h>
+#include <libso.h>
 #include <libsv.h>
-#include <libsl.h>
+#include <libsw.h>
 #include <libsd.h>
 #include <libsi.h>
 
-uint32_t si_gcv(ssa *a, svv *gc)
+void si_gcv(sr *r, svv *v)
 {
-	uint32_t used = 0;
-	svv *v = gc;
-	while (v) {
-		used += sv_vsize(v);
-		svv *n = v->next;
-		sl *log = (sl*)v->log;
+	sw *log = (sw*)v->log;
+	if (sv_vunref(r, v)) {
 		if (log)
 			ss_gcsweep(&log->gc, 1);
-		sv_vfree(a, v);
-		v = n;
 	}
-	return used;
 }

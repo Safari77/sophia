@@ -25,27 +25,27 @@
 static inline void
 set(void *dest, uint32_t id, uint32_t value)
 {
-	void *o = st_object(id, value);
+	void *o = st_document(id, value);
 	t( sp_set(dest, o) == 0 );
 }
 
 static inline void
 delete(void *dest, uint32_t id)
 {
-	void *o = st_object(id, id);
+	void *o = st_document(id, id);
 	t( sp_delete(dest, o) == 0 );
 }
 
 static inline void
 get(void *dest, uint32_t id, int value_to_check)
 {
-	void *o = st_object(id, id);
+	void *o = st_document(id, id);
 	o = sp_get(dest, o);
 	if (o == NULL) {
 		t( value_to_check == -1 );
 		return;
 	}
-	st_object_is(o, id, value_to_check);
+	st_document_is(o, id, value_to_check);
 	sp_destroy(o);
 }
 
@@ -170,7 +170,7 @@ hermitage_pmp(void)
 	void *T2 = begin();
 	/* select * from test where value = 30 */
 	void *cursor = sp_cursor(st_r.env);
-	void *o = sp_object(st_r.db);
+	void *o = sp_document(st_r.db);
 	while ((o = sp_get(cursor, o))) {
 		uint32_t key = *(uint32_t*)sp_getstring(o, "key", NULL);
 		t( key != 30 );
@@ -330,6 +330,46 @@ hermitage_g2_two_edges1(void)
 	commit(T1, 0);
 }
 
+static void
+hermitage_gh_164(void)
+{
+	/*
+	 * This test is not part of the Hermitage tests.
+	 *
+	 * source: https://github.com/pmwkaa/sophia/issues/164
+	*/
+	set(st_r.db, 'A', 5);
+	set(st_r.db, 'B', 5);
+
+	/* t0 */
+	void *T1 = begin();
+
+	/* t1 */
+	get(T1, 'A', 5);
+
+	/* t2 */
+	void *T2 = begin();
+
+	/* t3 */
+	get(T2, 'A', 5);
+	get(T2, 'B', 5);
+
+	/* t4 */
+	set(T2, 'A', 6);
+	set(T2, 'B', 4);
+
+	/* t5 */
+	commit(T2, 0); /* OK */
+
+	/* t6 */
+	get(T1, 'B', 5);
+
+	/* - - - - - */
+
+	get(T1, 'A', 5);
+	commit(T1, 0); /* OK, since T1 was read-only transaction */
+}
+
 stgroup *hermitage_group(void)
 {
 	stgroup *group = st_group("hermitage");
@@ -346,5 +386,6 @@ stgroup *hermitage_group(void)
 	st_groupadd(group, st_test("g2", hermitage_g2));
 	st_groupadd(group, st_test("g2_two_edges0", hermitage_g2_two_edges0));
 	st_groupadd(group, st_test("g2_two_edges1", hermitage_g2_two_edges1));
+	st_groupadd(group, st_test("gh_164", hermitage_gh_164));
 	return group;
 }

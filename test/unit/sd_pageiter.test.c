@@ -18,17 +18,17 @@
 static void
 addv(sdbuild *b, sr *r, uint64_t lsn, uint8_t flags, int *key)
 {
-	sfv pv;
-	pv.key = (char*)key;
-	pv.r.size = sizeof(uint32_t);
-	pv.r.offset = 0;
-	svv *v = sv_vbuild(r, &pv, 1, NULL, 0);
-	v->lsn = lsn;
-	v->flags = flags;
-	sv vv;
-	sv_init(&vv, &sv_vif, v, NULL);
-	sd_buildadd(b, r, &vv, flags & SVDUP);
-	sv_vfree(r->a, v);
+	sfv pv[8];
+	memset(pv, 0, sizeof(pv));
+	pv[0].pointer = (char*)key;
+	pv[0].size = sizeof(uint32_t);
+	pv[1].pointer = NULL;
+	pv[1].size = 0;
+	svv *v = sv_vbuild(r, pv);
+	sf_lsnset(r->scheme, sv_vpointer(v), lsn);
+	sf_flagsset(r->scheme, sv_vpointer(v), flags);
+	sd_buildadd(b, r, sv_vpointer(v), flags & SVDUP);
+	sv_vunref(r, v);
 }
 
 static void
@@ -36,14 +36,11 @@ sd_pageiter_lte_empty(void)
 {
 	sdbuild b;
 	sd_buildinit(&b);
-	t( sd_buildbegin(&b, &st_r.r, 1, 0, 0) == 0);
+	t( sd_buildbegin(&b, &st_r.r, 1, 0, NULL) == 0);
 	sd_buildend(&b, &st_r.r);
 
 	ssbuf buf;
 	ss_bufinit(&buf);
-	ssbuf xfbuf;
-	ss_bufinit(&xfbuf);
-	t( ss_bufensure(&xfbuf, &st_r.a, 1024) == 0 );
 	t( sd_commitpage(&b, &st_r.r, &buf) == 0 );
 	sdpageheader *h = (sdpageheader*)buf.s;
 	sdpage page;
@@ -51,15 +48,14 @@ sd_pageiter_lte_empty(void)
 
 	ssiter it;
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_LTE, NULL, 0);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_LTE, NULL);
 	t( ss_iteratorhas(&it) == 0 );
-	sv *v = ss_iteratorof(&it);
+	char *v = ss_iteratorof(&it);
 	t( v == NULL );
 	ss_iteratorclose(&it);
 
 	sd_buildfree(&b, &st_r.r);
 	ss_buffree(&buf, &st_r.a);
-	ss_buffree(&xfbuf, &st_r.a);
 }
 
 static void
@@ -67,7 +63,7 @@ sd_pageiter_lte_eq0(void)
 {
 	sdbuild b;
 	sd_buildinit(&b);
-	t( sd_buildbegin(&b, &st_r.r, 1, 0, 0) == 0);
+	t( sd_buildbegin(&b, &st_r.r, 1, 0, NULL) == 0);
 
 	int i = 7;
 	int j = 8;
@@ -79,40 +75,36 @@ sd_pageiter_lte_eq0(void)
 
 	ssbuf buf;
 	ss_bufinit(&buf);
-	ssbuf xfbuf;
-	ss_bufinit(&xfbuf);
-	t( ss_bufensure(&xfbuf, &st_r.a, 1024) == 0 );
 	t( sd_commitpage(&b, &st_r.r, &buf) == 0 );
 	sdpageheader *h = (sdpageheader*)buf.s;
 	sdpage page;
 	sd_pageinit(&page, h);
 
-	svv *key = st_svv(&st_r.g, &st_r.gc, 0, 0, i);
+	svv *key = st_svv(&st_r.g, &st_r.gc, 0, 0, i, 0, 0);
 	ssiter it;
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_LTE, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_LTE, sv_vpointer(key));
 	t( ss_iteratorhas(&it) != 0 );
-	sv *v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == i);
+	char *v = ss_iteratorof(&it);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == i);
 
-	key = st_svv(&st_r.g, &st_r.gc, 0, 0, j);
+	key = st_svv(&st_r.g, &st_r.gc, 0, 0, j, 0, 0);
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_LTE, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_LTE, sv_vpointer(key));
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == j);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == j);
 
-	key = st_svv(&st_r.g, &st_r.gc, 0, 0, k);
+	key = st_svv(&st_r.g, &st_r.gc, 0, 0, k, 0, 0);
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_LTE, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_LTE, sv_vpointer(key));
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == k);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == k);
 	ss_iteratorclose(&it);
 
 	sd_buildfree(&b, &st_r.r);
 	ss_buffree(&buf, &st_r.a);
-	ss_buffree(&xfbuf, &st_r.a);
 }
 
 static void
@@ -120,7 +112,7 @@ sd_pageiter_lte_minmax0(void)
 {
 	sdbuild b;
 	sd_buildinit(&b);
-	t( sd_buildbegin(&b, &st_r.r, 1, 0, 0) == 0);
+	t( sd_buildbegin(&b, &st_r.r, 1, 0, NULL) == 0);
 
 	int i = 7;
 	int j = 8;
@@ -132,32 +124,28 @@ sd_pageiter_lte_minmax0(void)
 
 	ssbuf buf;
 	ss_bufinit(&buf);
-	ssbuf xfbuf;
-	ss_bufinit(&xfbuf);
-	t( ss_bufensure(&xfbuf, &st_r.a, 1024) == 0 );
 	t( sd_commitpage(&b, &st_r.r, &buf) == 0 );
 	sdpageheader *h = (sdpageheader*)buf.s;
 	sdpage page;
 	sd_pageinit(&page, h);
 
-	svv *key = st_svv(&st_r.g, &st_r.gc, 0, 0, 6);
+	svv *key = st_svv(&st_r.g, &st_r.gc, 0, 0, 6, 0, 0);
 	ssiter it;
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_LTE, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_LTE, sv_vpointer(key));
 	t( ss_iteratorhas(&it) == 0 );
 	t( ss_iteratorof(&it) == NULL);
 
-	key = st_svv(&st_r.g, &st_r.gc, 0, 0, 16);
+	key = st_svv(&st_r.g, &st_r.gc, 0, 0, 16, 0, 0);
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_LTE, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_LTE, sv_vpointer(key));
 	t( ss_iteratorhas(&it) != 0 );
-	sv *v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == k);
+	char *v = ss_iteratorof(&it);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == k);
 	ss_iteratorclose(&it);
 
 	sd_buildfree(&b, &st_r.r);
 	ss_buffree(&buf, &st_r.a);
-	ss_buffree(&xfbuf, &st_r.a);
 }
 
 static void
@@ -165,7 +153,7 @@ sd_pageiter_lte_mid0(void)
 {
 	sdbuild b;
 	sd_buildinit(&b);
-	t( sd_buildbegin(&b, &st_r.r, 1, 0, 0) == 0);
+	t( sd_buildbegin(&b, &st_r.r, 1, 0, NULL) == 0);
 
 	int i = 7;
 	int j = 9;
@@ -177,40 +165,36 @@ sd_pageiter_lte_mid0(void)
 
 	ssbuf buf;
 	ss_bufinit(&buf);
-	ssbuf xfbuf;
-	ss_bufinit(&xfbuf);
-	t( ss_bufensure(&xfbuf, &st_r.a, 1024) == 0 );
 	t( sd_commitpage(&b, &st_r.r, &buf) == 0 );
 	sdpageheader *h = (sdpageheader*)buf.s;
 	sdpage page;
 	sd_pageinit(&page, h);
 
-	svv *key = st_svv(&st_r.g, &st_r.gc, 0, 0, 8);
+	svv *key = st_svv(&st_r.g, &st_r.gc, 0, 0, 8, 0, 0);
 	ssiter it;
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_LTE, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_LTE, sv_vpointer(key));
 	t( ss_iteratorhas(&it) != 0 );
-	sv *v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == i);
+	char *v = ss_iteratorof(&it);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == i);
 
-	key = st_svv(&st_r.g, &st_r.gc, 0, 0, 10);
+	key = st_svv(&st_r.g, &st_r.gc, 0, 0, 10, 0, 0);
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_LTE, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_LTE, sv_vpointer(key));
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == j);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == j);
 
-	key = st_svv(&st_r.g, &st_r.gc, 0, 0, 555);
+	key = st_svv(&st_r.g, &st_r.gc, 0, 0, 555, 0, 0);
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_LTE, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_LTE, sv_vpointer(key));
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == k);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == k);
 	ss_iteratorclose(&it);
 
 	sd_buildfree(&b, &st_r.r);
 	ss_buffree(&buf, &st_r.a);
-	ss_buffree(&xfbuf, &st_r.a);
 }
 
 static void
@@ -218,7 +202,7 @@ sd_pageiter_lte_iterate0(void)
 {
 	sdbuild b;
 	sd_buildinit(&b);
-	t( sd_buildbegin(&b, &st_r.r, 1, 0, 0) == 0);
+	t( sd_buildbegin(&b, &st_r.r, 1, 0, NULL) == 0);
 
 	int i = 7;
 	int j = 9;
@@ -230,9 +214,6 @@ sd_pageiter_lte_iterate0(void)
 
 	ssbuf buf;
 	ss_bufinit(&buf);
-	ssbuf xfbuf;
-	ss_bufinit(&xfbuf);
-	t( ss_bufensure(&xfbuf, &st_r.a, 1024) == 0 );
 	t( sd_commitpage(&b, &st_r.r, &buf) == 0 );
 	sdpageheader *h = (sdpageheader*)buf.s;
 	sdpage page;
@@ -240,20 +221,20 @@ sd_pageiter_lte_iterate0(void)
 
 	ssiter it;
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_LTE, NULL, 0);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_LTE, NULL);
 	t( ss_iteratorhas(&it) != 0 );
-	sv *v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == k);
+	char *v = ss_iteratorof(&it);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == k);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == j);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == j);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == i);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == i);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) == 0 );
@@ -263,7 +244,6 @@ sd_pageiter_lte_iterate0(void)
 
 	sd_buildfree(&b, &st_r.r);
 	ss_buffree(&buf, &st_r.a);
-	ss_buffree(&xfbuf, &st_r.a);
 }
 
 static void
@@ -271,7 +251,7 @@ sd_pageiter_lte_iterate1(void)
 {
 	sdbuild b;
 	sd_buildinit(&b);
-	t( sd_buildbegin(&b, &st_r.r, 1, 0, 0) == 0);
+	t( sd_buildbegin(&b, &st_r.r, 1, 0, NULL) == 0);
 
 	int i = 7;
 	int j = 9;
@@ -283,31 +263,28 @@ sd_pageiter_lte_iterate1(void)
 
 	ssbuf buf;
 	ss_bufinit(&buf);
-	ssbuf xfbuf;
-	ss_bufinit(&xfbuf);
-	t( ss_bufensure(&xfbuf, &st_r.a, 1024) == 0 );
 	t( sd_commitpage(&b, &st_r.r, &buf) == 0 );
 	sdpageheader *h = (sdpageheader*)buf.s;
 	sdpage page;
 	sd_pageinit(&page, h);
 
-	svv *key = st_svv(&st_r.g, &st_r.gc, 0, 0, k);
+	svv *key = st_svv(&st_r.g, &st_r.gc, 0, 0, k, 0, 0);
 	ssiter it;
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_LTE, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_LTE, sv_vpointer(key));
 	t( ss_iteratorhas(&it) != 0 );
-	sv *v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == k);
+	char *v = ss_iteratorof(&it);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == k);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == j);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == j);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == i);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == i);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) == 0 );
@@ -317,7 +294,6 @@ sd_pageiter_lte_iterate1(void)
 
 	sd_buildfree(&b, &st_r.r);
 	ss_buffree(&buf, &st_r.a);
-	ss_buffree(&xfbuf, &st_r.a);
 }
 
 static void
@@ -325,7 +301,7 @@ sd_pageiter_lte_dup_iterate0(void)
 {
 	sdbuild b;
 	sd_buildinit(&b);
-	t( sd_buildbegin(&b, &st_r.r, 1, 0, 0) == 0);
+	t( sd_buildbegin(&b, &st_r.r, 1, 0, NULL) == 0);
 
 	int i = 7;
 	int j = 9;
@@ -341,66 +317,63 @@ sd_pageiter_lte_dup_iterate0(void)
 
 	ssbuf buf;
 	ss_bufinit(&buf);
-	ssbuf xfbuf;
-	ss_bufinit(&xfbuf);
-	t( ss_bufensure(&xfbuf, &st_r.a, 1024) == 0 );
 	t( sd_commitpage(&b, &st_r.r, &buf) == 0 );
 	sdpageheader *h = (sdpageheader*)buf.s;
 	sdpage page;
 	sd_pageinit(&page, h);
 
-	svv *key = st_svv(&st_r.g, &st_r.gc, 0, 0, 100);
+	svv *key = st_svv(&st_r.g, &st_r.gc, 0, 0, 100, 0, 0);
 	ssiter it;
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_LTE, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_LTE, sv_vpointer(key));
 
 	t( ss_iteratorhas(&it) != 0 );
-	sv *v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == k);
-	t( sv_flags(v) == 0);
-	t( sv_lsn(v) == 50);
+	char *v = ss_iteratorof(&it);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == k);
+	t( sf_flags(st_r.r.scheme, v) == 0);
+	t( sf_lsn(st_r.r.scheme, v) == 50);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == k);
-	t( sv_flags(v) == SVDUP);
-	t( sv_lsn(v) == 40);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == k);
+	t( sf_flags(st_r.r.scheme, v) == SVDUP);
+	t( sf_lsn(st_r.r.scheme, v) == 40);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == k);
-	t( sv_flags(v) == SVDUP);
-	t( sv_lsn(v) == 30);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == k);
+	t( sf_flags(st_r.r.scheme, v) == SVDUP);
+	t( sf_lsn(st_r.r.scheme, v) == 30);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == j);
-	t( sv_flags(v) == 0);
-	t( sv_lsn(v) == 80);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == j);
+	t( sf_flags(st_r.r.scheme, v) == 0);
+	t( sf_lsn(st_r.r.scheme, v) == 80);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == j);
-	t( sv_flags(v) == SVDUP);
-	t( sv_lsn(v) == 70);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == j);
+	t( sf_flags(st_r.r.scheme, v) == SVDUP);
+	t( sf_lsn(st_r.r.scheme, v) == 70);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == j);
-	t( sv_flags(v) == SVDUP);
-	t( sv_lsn(v) == 60);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == j);
+	t( sf_flags(st_r.r.scheme, v) == SVDUP);
+	t( sf_lsn(st_r.r.scheme, v) == 60);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == i);
-	t( sv_flags(v) == 0);
-	t( sv_lsn(v) == 90);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == i);
+	t( sf_flags(st_r.r.scheme, v) == 0);
+	t( sf_lsn(st_r.r.scheme, v) == 90);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) == 0 );
@@ -410,7 +383,6 @@ sd_pageiter_lte_dup_iterate0(void)
 
 	sd_buildfree(&b, &st_r.r);
 	ss_buffree(&buf, &st_r.a);
-	ss_buffree(&xfbuf, &st_r.a);
 }
 
 static void
@@ -418,7 +390,7 @@ sd_pageiter_lte_dup_mid(void)
 {
 	sdbuild b;
 	sd_buildinit(&b);
-	t( sd_buildbegin(&b, &st_r.r, 1, 0, 0) == 0);
+	t( sd_buildbegin(&b, &st_r.r, 1, 0, NULL) == 0);
 
 	int i = 7;
 	int j = 9;
@@ -434,54 +406,50 @@ sd_pageiter_lte_dup_mid(void)
 
 	ssbuf buf;
 	ss_bufinit(&buf);
-	ssbuf xfbuf;
-	ss_bufinit(&xfbuf);
-	t( ss_bufensure(&xfbuf, &st_r.a, 1024) == 0 );
 	t( sd_commitpage(&b, &st_r.r, &buf) == 0 );
 	sdpageheader *h = (sdpageheader*)buf.s;
 	sdpage page;
 	sd_pageinit(&page, h);
 
 	svv *key;
-	sv *v;
+	char *v;
 	ssiter it;
 
 	/* i */
-	key = st_svv(&st_r.g, &st_r.gc, 0, 0, i);
+	key = st_svv(&st_r.g, &st_r.gc, 0, 0, i, 0, 0);
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_LTE, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_LTE, sv_vpointer(key));
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == i);
-	t( sv_flags(v) == 0);
-	t( sv_lsn(v) == 90);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == i);
+	t( sf_flags(st_r.r.scheme, v) == 0);
+	t( sf_lsn(st_r.r.scheme, v) == 90);
 	ss_iteratorclose(&it);
 
 	/* j */
-	key = st_svv(&st_r.g, &st_r.gc, 0, 0, j);
+	key = st_svv(&st_r.g, &st_r.gc, 0, 0, j, 0, 0);
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_LTE, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_LTE, sv_vpointer(key));
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == j);
-	t( sv_flags(v) == 0);
-	t( sv_lsn(v) == 80);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == j);
+	t( sf_flags(st_r.r.scheme, v) == 0);
+	t( sf_lsn(st_r.r.scheme, v) == 80);
 	ss_iteratorclose(&it);
 
 	/* k */
-	key = st_svv(&st_r.g, &st_r.gc, 0, 0, k);
+	key = st_svv(&st_r.g, &st_r.gc, 0, 0, k, 0, 0);
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_LTE, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_LTE, sv_vpointer(key));
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == k);
-	t( sv_flags(v) == 0);
-	t( sv_lsn(v) == 50);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == k);
+	t( sf_flags(st_r.r.scheme, v) == 0);
+	t( sf_lsn(st_r.r.scheme, v) == 50);
 	ss_iteratorclose(&it);
 
 	sd_buildfree(&b, &st_r.r);
 	ss_buffree(&buf, &st_r.a);
-	ss_buffree(&xfbuf, &st_r.a);
 }
 
 static void
@@ -489,7 +457,7 @@ sd_pageiter_lt_eq(void)
 {
 	sdbuild b;
 	sd_buildinit(&b);
-	t( sd_buildbegin(&b, &st_r.r, 1, 0, 0) == 0);
+	t( sd_buildbegin(&b, &st_r.r, 1, 0, NULL) == 0);
 
 	int i = 7;
 	int j = 8;
@@ -501,40 +469,36 @@ sd_pageiter_lt_eq(void)
 
 	ssbuf buf;
 	ss_bufinit(&buf);
-	ssbuf xfbuf;
-	ss_bufinit(&xfbuf);
-	t( ss_bufensure(&xfbuf, &st_r.a, 1024) == 0 );
 	t( sd_commitpage(&b, &st_r.r, &buf) == 0 );
 	sdpageheader *h = (sdpageheader*)buf.s;
 	sdpage page;
 	sd_pageinit(&page, h);
 
-	svv *key = st_svv(&st_r.g, &st_r.gc, 0, 0, i);
+	svv *key = st_svv(&st_r.g, &st_r.gc, 0, 0, i, 0, 0);
 	ssiter it;
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_LT, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_LT, sv_vpointer(key));
 	t( ss_iteratorhas(&it) == 0 );
-	sv *v = ss_iteratorof(&it);
+	char *v = ss_iteratorof(&it);
 	t( v == NULL);
 
-	key = st_svv(&st_r.g, &st_r.gc, 0, 0, j);
+	key = st_svv(&st_r.g, &st_r.gc, 0, 0, j, 0, 0);
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_LT, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_LT, sv_vpointer(key));
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == i);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == i);
 
-	key = st_svv(&st_r.g, &st_r.gc, 0, 0, k);
+	key = st_svv(&st_r.g, &st_r.gc, 0, 0, k, 0, 0);
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_LT, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_LT, sv_vpointer(key));
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == j);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == j);
 	ss_iteratorclose(&it);
 
 	sd_buildfree(&b, &st_r.r);
 	ss_buffree(&buf, &st_r.a);
-	ss_buffree(&xfbuf, &st_r.a);
 }
 
 static void
@@ -542,7 +506,7 @@ sd_pageiter_lt_minmax(void)
 {
 	sdbuild b;
 	sd_buildinit(&b);
-	t( sd_buildbegin(&b, &st_r.r, 1, 0, 0) == 0);
+	t( sd_buildbegin(&b, &st_r.r, 1, 0, NULL) == 0);
 
 	int i = 7;
 	int j = 8;
@@ -554,32 +518,28 @@ sd_pageiter_lt_minmax(void)
 
 	ssbuf buf;
 	ss_bufinit(&buf);
-	ssbuf xfbuf;
-	ss_bufinit(&xfbuf);
-	t( ss_bufensure(&xfbuf, &st_r.a, 1024) == 0 );
 	t( sd_commitpage(&b, &st_r.r, &buf) == 0 );
 	sdpageheader *h = (sdpageheader*)buf.s;
 	sdpage page;
 	sd_pageinit(&page, h);
 
-	svv *key = st_svv(&st_r.g, &st_r.gc, 0, 0, 7);
+	svv *key = st_svv(&st_r.g, &st_r.gc, 0, 0, 7, 0, 0);
 	ssiter it;
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_LT, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_LT, sv_vpointer(key));
 	t( ss_iteratorhas(&it) == 0 );
 	t( ss_iteratorof(&it) == NULL);
 
-	key = st_svv(&st_r.g, &st_r.gc, 0, 0, 16);
+	key = st_svv(&st_r.g, &st_r.gc, 0, 0, 16, 0, 0);
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_LTE, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_LTE, sv_vpointer(key));
 	t( ss_iteratorhas(&it) != 0 );
-	sv *v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == k);
+	char *v = ss_iteratorof(&it);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == k);
 	ss_iteratorclose(&it);
 
 	sd_buildfree(&b, &st_r.r);
 	ss_buffree(&buf, &st_r.a);
-	ss_buffree(&xfbuf, &st_r.a);
 }
 
 static void
@@ -587,7 +547,7 @@ sd_pageiter_lt_mid(void)
 {
 	sdbuild b;
 	sd_buildinit(&b);
-	t( sd_buildbegin(&b, &st_r.r, 1, 0, 0) == 0);
+	t( sd_buildbegin(&b, &st_r.r, 1, 0, NULL) == 0);
 
 	int i = 7;
 	int j = 9;
@@ -599,40 +559,36 @@ sd_pageiter_lt_mid(void)
 
 	ssbuf buf;
 	ss_bufinit(&buf);
-	ssbuf xfbuf;
-	ss_bufinit(&xfbuf);
-	t( ss_bufensure(&xfbuf, &st_r.a, 1024) == 0 );
 	t( sd_commitpage(&b, &st_r.r, &buf) == 0 );
 	sdpageheader *h = (sdpageheader*)buf.s;
 	sdpage page;
 	sd_pageinit(&page, h);
 
-	svv *key = st_svv(&st_r.g, &st_r.gc, 0, 0, 8);
+	svv *key = st_svv(&st_r.g, &st_r.gc, 0, 0, 8, 0, 0);
 	ssiter it;
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_LT, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_LT, sv_vpointer(key));
 	t( ss_iteratorhas(&it) != 0 );
-	sv *v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == i);
+	char *v = ss_iteratorof(&it);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == i);
 
-	key = st_svv(&st_r.g, &st_r.gc, 0, 0, 10);
+	key = st_svv(&st_r.g, &st_r.gc, 0, 0, 10, 0, 0);
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_LT, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_LT, sv_vpointer(key));
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == j);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == j);
 
-	key = st_svv(&st_r.g, &st_r.gc, 0, 0, 555);
+	key = st_svv(&st_r.g, &st_r.gc, 0, 0, 555, 0, 0);
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_LT, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_LT, sv_vpointer(key));
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == k);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == k);
 	ss_iteratorclose(&it);
 
 	sd_buildfree(&b, &st_r.r);
 	ss_buffree(&buf, &st_r.a);
-	ss_buffree(&xfbuf, &st_r.a);
 }
 
 static void
@@ -640,7 +596,7 @@ sd_pageiter_lt_iterate0(void)
 {
 	sdbuild b;
 	sd_buildinit(&b);
-	t( sd_buildbegin(&b, &st_r.r, 1, 0, 0) == 0);
+	t( sd_buildbegin(&b, &st_r.r, 1, 0, NULL) == 0);
 
 	int i = 7;
 	int j = 9;
@@ -652,9 +608,6 @@ sd_pageiter_lt_iterate0(void)
 
 	ssbuf buf;
 	ss_bufinit(&buf);
-	ssbuf xfbuf;
-	ss_bufinit(&xfbuf);
-	t( ss_bufensure(&xfbuf, &st_r.a, 1024) == 0 );
 	t( sd_commitpage(&b, &st_r.r, &buf) == 0 );
 	sdpageheader *h = (sdpageheader*)buf.s;
 	sdpage page;
@@ -662,20 +615,20 @@ sd_pageiter_lt_iterate0(void)
 
 	ssiter it;
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_LT, NULL, 0);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_LT, NULL);
 	t( ss_iteratorhas(&it) != 0 );
-	sv *v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == k);
+	char *v = ss_iteratorof(&it);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == k);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == j);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == j);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == i);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == i);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) == 0 );
@@ -685,7 +638,6 @@ sd_pageiter_lt_iterate0(void)
 
 	sd_buildfree(&b, &st_r.r);
 	ss_buffree(&buf, &st_r.a);
-	ss_buffree(&xfbuf, &st_r.a);
 }
 
 static void
@@ -693,7 +645,7 @@ sd_pageiter_lt_iterate1(void)
 {
 	sdbuild b;
 	sd_buildinit(&b);
-	t( sd_buildbegin(&b, &st_r.r, 1, 0, 0) == 0);
+	t( sd_buildbegin(&b, &st_r.r, 1, 0, NULL) == 0);
 
 	int i = 7;
 	int j = 9;
@@ -705,26 +657,23 @@ sd_pageiter_lt_iterate1(void)
 
 	ssbuf buf;
 	ss_bufinit(&buf);
-	ssbuf xfbuf;
-	ss_bufinit(&xfbuf);
-	t( ss_bufensure(&xfbuf, &st_r.a, 1024) == 0 );
 	t( sd_commitpage(&b, &st_r.r, &buf) == 0 );
 	sdpageheader *h = (sdpageheader*)buf.s;
 	sdpage page;
 	sd_pageinit(&page, h);
 
-	svv *key = st_svv(&st_r.g, &st_r.gc, 0, 0, k);
+	svv *key = st_svv(&st_r.g, &st_r.gc, 0, 0, k, 0, 0);
 	ssiter it;
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_LT, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_LT, sv_vpointer(key));
 	t( ss_iteratorhas(&it) != 0 );
-	sv *v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == j);
+	char *v = ss_iteratorof(&it);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == j);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == i);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == i);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) == 0 );
@@ -734,7 +683,6 @@ sd_pageiter_lt_iterate1(void)
 
 	sd_buildfree(&b, &st_r.r);
 	ss_buffree(&buf, &st_r.a);
-	ss_buffree(&xfbuf, &st_r.a);
 }
 
 static void
@@ -742,7 +690,7 @@ sd_pageiter_lt_dup_mid(void)
 {
 	sdbuild b;
 	sd_buildinit(&b);
-	t( sd_buildbegin(&b, &st_r.r, 1, 0, 0) == 0);
+	t( sd_buildbegin(&b, &st_r.r, 1, 0, NULL) == 0);
 
 	int i = 7;
 	int j = 9;
@@ -758,52 +706,48 @@ sd_pageiter_lt_dup_mid(void)
 
 	ssbuf buf;
 	ss_bufinit(&buf);
-	ssbuf xfbuf;
-	ss_bufinit(&xfbuf);
-	t( ss_bufensure(&xfbuf, &st_r.a, 1024) == 0 );
 	t( sd_commitpage(&b, &st_r.r, &buf) == 0 );
 	sdpageheader *h = (sdpageheader*)buf.s;
 	sdpage page;
 	sd_pageinit(&page, h);
 
 	svv *key;
-	sv *v;
+	char *v;
 	ssiter it;
 
 	/* i */
-	key = st_svv(&st_r.g, &st_r.gc, 0, 0, i);
+	key = st_svv(&st_r.g, &st_r.gc, 0, 0, i, 0, 0);
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_LT, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_LT, sv_vpointer(key));
 	t( ss_iteratorhas(&it) == 0 );
 	v = ss_iteratorof(&it);
 	t( v == NULL );
 	ss_iteratorclose(&it);
 
 	/* j */
-	key = st_svv(&st_r.g, &st_r.gc, 0, 0, j);
+	key = st_svv(&st_r.g, &st_r.gc, 0, 0, j, 0, 0);
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_LT, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_LT, sv_vpointer(key));
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == i);
-	t( sv_flags(v) == 0);
-	t( sv_lsn(v) == 90);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == i);
+	t( sf_flags(st_r.r.scheme, v) == 0);
+	t( sf_lsn(st_r.r.scheme, v) == 90);
 	ss_iteratorclose(&it);
 
 	/* k */
-	key = st_svv(&st_r.g, &st_r.gc, 0, 0, k);
+	key = st_svv(&st_r.g, &st_r.gc, 0, 0, k, 0, 0);
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_LT, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_LT, sv_vpointer(key));
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == j);
-	t( sv_flags(v) == 0);
-	t( sv_lsn(v) == 80);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == j);
+	t( sf_flags(st_r.r.scheme, v) == 0);
+	t( sf_lsn(st_r.r.scheme, v) == 80);
 	ss_iteratorclose(&it);
 
 	sd_buildfree(&b, &st_r.r);
 	ss_buffree(&buf, &st_r.a);
-	ss_buffree(&xfbuf, &st_r.a);
 }
 
 static void
@@ -811,7 +755,7 @@ sd_pageiter_gte_eq0(void)
 {
 	sdbuild b;
 	sd_buildinit(&b);
-	t( sd_buildbegin(&b, &st_r.r, 1, 0, 0) == 0);
+	t( sd_buildbegin(&b, &st_r.r, 1, 0, NULL) == 0);
 
 	int i = 7;
 	int j = 8;
@@ -823,40 +767,36 @@ sd_pageiter_gte_eq0(void)
 
 	ssbuf buf;
 	ss_bufinit(&buf);
-	ssbuf xfbuf;
-	ss_bufinit(&xfbuf);
-	t( ss_bufensure(&xfbuf, &st_r.a, 1024) == 0 );
 	t( sd_commitpage(&b, &st_r.r, &buf) == 0 );
 	sdpageheader *h = (sdpageheader*)buf.s;
 	sdpage page;
 	sd_pageinit(&page, h);
 
-	svv *key = st_svv(&st_r.g, &st_r.gc, 0, 0, i);
+	svv *key = st_svv(&st_r.g, &st_r.gc, 0, 0, i, 0, 0);
 	ssiter it;
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_GTE, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_GTE, sv_vpointer(key));
 	t( ss_iteratorhas(&it) != 0 );
-	sv *v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == i);
+	char *v = ss_iteratorof(&it);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == i);
 
-	key = st_svv(&st_r.g, &st_r.gc, 0, 0, j);
+	key = st_svv(&st_r.g, &st_r.gc, 0, 0, j, 0, 0);
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_GTE, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_GTE, sv_vpointer(key));
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == j);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == j);
 
-	key = st_svv(&st_r.g, &st_r.gc, 0, 0, k);
+	key = st_svv(&st_r.g, &st_r.gc, 0, 0, k, 0, 0);
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_GTE, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_GTE, sv_vpointer(key));
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == k);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == k);
 	ss_iteratorclose(&it);
 
 	sd_buildfree(&b, &st_r.r);
 	ss_buffree(&buf, &st_r.a);
-	ss_buffree(&xfbuf, &st_r.a);
 }
 
 static void
@@ -864,7 +804,7 @@ sd_pageiter_gte_minmax0(void)
 {
 	sdbuild b;
 	sd_buildinit(&b);
-	t( sd_buildbegin(&b, &st_r.r, 1, 0, 0) == 0);
+	t( sd_buildbegin(&b, &st_r.r, 1, 0, NULL) == 0);
 
 	int i = 7;
 	int j = 8;
@@ -876,25 +816,22 @@ sd_pageiter_gte_minmax0(void)
 
 	ssbuf buf;
 	ss_bufinit(&buf);
-	ssbuf xfbuf;
-	ss_bufinit(&xfbuf);
-	t( ss_bufensure(&xfbuf, &st_r.a, 1024) == 0 );
 	t( sd_commitpage(&b, &st_r.r, &buf) == 0 );
 	sdpageheader *h = (sdpageheader*)buf.s;
 	sdpage page;
 	sd_pageinit(&page, h);
 
-	svv *key = st_svv(&st_r.g, &st_r.gc, 0, 0, 6);
+	svv *key = st_svv(&st_r.g, &st_r.gc, 0, 0, 6, 0, 0);
 	ssiter it;
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_GTE, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_GTE, sv_vpointer(key));
 	t( ss_iteratorhas(&it) != 0 );
-	sv *v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == i);
+	char *v = ss_iteratorof(&it);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == i);
 
-	key = st_svv(&st_r.g, &st_r.gc, 0, 0, 16);
+	key = st_svv(&st_r.g, &st_r.gc, 0, 0, 16, 0, 0);
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_GTE, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_GTE, sv_vpointer(key));
 	t( ss_iteratorhas(&it) == 0 );
 	v = ss_iteratorof(&it);
 	t( v == NULL );
@@ -902,7 +839,6 @@ sd_pageiter_gte_minmax0(void)
 
 	sd_buildfree(&b, &st_r.r);
 	ss_buffree(&buf, &st_r.a);
-	ss_buffree(&xfbuf, &st_r.a);
 }
 
 static void
@@ -910,7 +846,7 @@ sd_pageiter_gte_mid0(void)
 {
 	sdbuild b;
 	sd_buildinit(&b);
-	t( sd_buildbegin(&b, &st_r.r, 1, 0, 0) == 0);
+	t( sd_buildbegin(&b, &st_r.r, 1, 0, NULL) == 0);
 
 	int i = 7;
 	int j = 9;
@@ -922,39 +858,36 @@ sd_pageiter_gte_mid0(void)
 
 	ssbuf buf;
 	ss_bufinit(&buf);
-	ssbuf xfbuf;
-	ss_bufinit(&xfbuf);
-	t( ss_bufensure(&xfbuf, &st_r.a, 1024) == 0 );
 	t( sd_commitpage(&b, &st_r.r, &buf) == 0 );
 	sdpageheader *h = (sdpageheader*)buf.s;
 	sdpage page;
 	sd_pageinit(&page, h);
 
-	svv *key = st_svv(&st_r.g, &st_r.gc, 0, 0, 8);
+	svv *key = st_svv(&st_r.g, &st_r.gc, 0, 0, 8, 0, 0);
 	ssiter it;
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_GTE, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_GTE, sv_vpointer(key));
 	t( ss_iteratorhas(&it) != 0 );
-	sv *v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == j);
+	char *v = ss_iteratorof(&it);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == j);
 
-	key = st_svv(&st_r.g, &st_r.gc, 0, 0, 10);
+	key = st_svv(&st_r.g, &st_r.gc, 0, 0, 10, 0, 0);
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_GTE, sv_vpointer(key), key->size);
-	t( ss_iteratorhas(&it) != 0 );
-	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == k);
-
-	key = st_svv(&st_r.g, &st_r.gc, 0, 0, 2);
-	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_GTE, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_GTE, sv_vpointer(key));
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == i);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == k);
 
-	key = st_svv(&st_r.g, &st_r.gc, 0, 0, 555);
+	key = st_svv(&st_r.g, &st_r.gc, 0, 0, 2, 0, 0);
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_GTE, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_GTE, sv_vpointer(key));
+	t( ss_iteratorhas(&it) != 0 );
+	v = ss_iteratorof(&it);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == i);
+
+	key = st_svv(&st_r.g, &st_r.gc, 0, 0, 555, 0, 0);
+	ss_iterinit(sd_pageiter, &it);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_GTE, sv_vpointer(key));
 	t( ss_iteratorhas(&it) == 0 );
 	v = ss_iteratorof(&it);
 	t( v == NULL );
@@ -962,7 +895,6 @@ sd_pageiter_gte_mid0(void)
 
 	sd_buildfree(&b, &st_r.r);
 	ss_buffree(&buf, &st_r.a);
-	ss_buffree(&xfbuf, &st_r.a);
 }
 
 static void
@@ -970,7 +902,7 @@ sd_pageiter_gte_mid1(void)
 {
 	sdbuild b;
 	sd_buildinit(&b);
-	t( sd_buildbegin(&b, &st_r.r, 1, 0, 0) == 0);
+	t( sd_buildbegin(&b, &st_r.r, 1, 0, NULL) == 0);
 
 	int i = 7;
 	int j = 9;
@@ -982,9 +914,6 @@ sd_pageiter_gte_mid1(void)
 
 	ssbuf buf;
 	ss_bufinit(&buf);
-	ssbuf xfbuf;
-	ss_bufinit(&xfbuf);
-	t( ss_bufensure(&xfbuf, &st_r.a, 1024) == 0 );
 	t( sd_commitpage(&b, &st_r.r, &buf) == 0 );
 	sdpageheader *h = (sdpageheader*)buf.s;
 	sdpage page;
@@ -992,20 +921,20 @@ sd_pageiter_gte_mid1(void)
 
 	ssiter it;
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_GTE, NULL, 0);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_GTE, NULL);
 	t( ss_iteratorhas(&it) != 0 );
-	sv *v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == i);
+	char *v = ss_iteratorof(&it);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == i);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == j);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == j);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == k);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == k);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) == 0 );
@@ -1015,7 +944,6 @@ sd_pageiter_gte_mid1(void)
 
 	sd_buildfree(&b, &st_r.r);
 	ss_buffree(&buf, &st_r.a);
-	ss_buffree(&xfbuf, &st_r.a);
 }
 
 static void
@@ -1023,7 +951,7 @@ sd_pageiter_gte_iterate0(void)
 {
 	sdbuild b;
 	sd_buildinit(&b);
-	t( sd_buildbegin(&b, &st_r.r, 1, 0, 0) == 0);
+	t( sd_buildbegin(&b, &st_r.r, 1, 0, NULL) == 0);
 
 	int i = 7;
 	int j = 9;
@@ -1035,9 +963,6 @@ sd_pageiter_gte_iterate0(void)
 
 	ssbuf buf;
 	ss_bufinit(&buf);
-	ssbuf xfbuf;
-	ss_bufinit(&xfbuf);
-	t( ss_bufensure(&xfbuf, &st_r.a, 1024) == 0 );
 	t( sd_commitpage(&b, &st_r.r, &buf) == 0 );
 	sdpageheader *h = (sdpageheader*)buf.s;
 	sdpage page;
@@ -1045,20 +970,20 @@ sd_pageiter_gte_iterate0(void)
 
 	ssiter it;
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_GTE, NULL, 0);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_GTE, NULL);
 	t( ss_iteratorhas(&it) != 0 );
-	sv *v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == i);
+	char *v = ss_iteratorof(&it);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == i);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == j);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == j);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == k);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == k);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) == 0 );
@@ -1068,7 +993,6 @@ sd_pageiter_gte_iterate0(void)
 
 	sd_buildfree(&b, &st_r.r);
 	ss_buffree(&buf, &st_r.a);
-	ss_buffree(&xfbuf, &st_r.a);
 }
 
 static void
@@ -1076,7 +1000,7 @@ sd_pageiter_gte_iterate1(void)
 {
 	sdbuild b;
 	sd_buildinit(&b);
-	t( sd_buildbegin(&b, &st_r.r, 1, 0, 0) == 0);
+	t( sd_buildbegin(&b, &st_r.r, 1, 0, NULL) == 0);
 
 	int i = 7;
 	int j = 9;
@@ -1088,31 +1012,28 @@ sd_pageiter_gte_iterate1(void)
 
 	ssbuf buf;
 	ss_bufinit(&buf);
-	ssbuf xfbuf;
-	ss_bufinit(&xfbuf);
-	t( ss_bufensure(&xfbuf, &st_r.a, 1024) == 0 );
 	t( sd_commitpage(&b, &st_r.r, &buf) == 0 );
 	sdpageheader *h = (sdpageheader*)buf.s;
 	sdpage page;
 	sd_pageinit(&page, h);
 
-	svv *key = st_svv(&st_r.g, &st_r.gc, 0, 0, i);
+	svv *key = st_svv(&st_r.g, &st_r.gc, 0, 0, i, 0, 0);
 	ssiter it;
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_GTE, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_GTE, sv_vpointer(key));
 	t( ss_iteratorhas(&it) != 0 );
-	sv *v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == i);
+	char *v = ss_iteratorof(&it);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == i);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == j);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == j);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == k);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == k);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) == 0 );
@@ -1122,7 +1043,6 @@ sd_pageiter_gte_iterate1(void)
 
 	sd_buildfree(&b, &st_r.r);
 	ss_buffree(&buf, &st_r.a);
-	ss_buffree(&xfbuf, &st_r.a);
 }
 
 static void
@@ -1130,7 +1050,7 @@ sd_pageiter_gte_dup_iterate0(void)
 {
 	sdbuild b;
 	sd_buildinit(&b);
-	t( sd_buildbegin(&b, &st_r.r, 1, 0, 0) == 0);
+	t( sd_buildbegin(&b, &st_r.r, 1, 0, NULL) == 0);
 
 	int i = 7;
 	int j = 9;
@@ -1146,59 +1066,56 @@ sd_pageiter_gte_dup_iterate0(void)
 
 	ssbuf buf;
 	ss_bufinit(&buf);
-	ssbuf xfbuf;
-	ss_bufinit(&xfbuf);
-	t( ss_bufensure(&xfbuf, &st_r.a, 1024) == 0 );
 	t( sd_commitpage(&b, &st_r.r, &buf) == 0 );
 	sdpageheader *h = (sdpageheader*)buf.s;
 	sdpage page;
 	sd_pageinit(&page, h);
 
-	svv *key = st_svv(&st_r.g, &st_r.gc, 0, 0, 1);
+	svv *key = st_svv(&st_r.g, &st_r.gc, 0, 0, 1, 0, 0);
 	ssiter it;
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_GTE, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_GTE, sv_vpointer(key));
 
 	t( ss_iteratorhas(&it) != 0 );
-	sv *v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == i);
-	t( sv_lsn(v) == 90);
+	char *v = ss_iteratorof(&it);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == i);
+	t( sf_lsn(st_r.r.scheme, v) == 90);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == j);
-	t( sv_lsn(v) == 80);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == j);
+	t( sf_lsn(st_r.r.scheme, v) == 80);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == j);
-	t( sv_lsn(v) == 70);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == j);
+	t( sf_lsn(st_r.r.scheme, v) == 70);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == j);
-	t( sv_lsn(v) == 60);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == j);
+	t( sf_lsn(st_r.r.scheme, v) == 60);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == k);
-	t( sv_lsn(v) == 50);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == k);
+	t( sf_lsn(st_r.r.scheme, v) == 50);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == k);
-	t( sv_lsn(v) == 40);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == k);
+	t( sf_lsn(st_r.r.scheme, v) == 40);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == k);
-	t( sv_lsn(v) == 30);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == k);
+	t( sf_lsn(st_r.r.scheme, v) == 30);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) == 0 );
@@ -1208,7 +1125,6 @@ sd_pageiter_gte_dup_iterate0(void)
 
 	sd_buildfree(&b, &st_r.r);
 	ss_buffree(&buf, &st_r.a);
-	ss_buffree(&xfbuf, &st_r.a);
 }
 
 static void
@@ -1216,7 +1132,7 @@ sd_pageiter_gte_dup_mid(void)
 {
 	sdbuild b;
 	sd_buildinit(&b);
-	t( sd_buildbegin(&b, &st_r.r, 1, 0, 0) == 0);
+	t( sd_buildbegin(&b, &st_r.r, 1, 0, NULL) == 0);
 
 	int i = 7;
 	int j = 9;
@@ -1232,54 +1148,50 @@ sd_pageiter_gte_dup_mid(void)
 
 	ssbuf buf;
 	ss_bufinit(&buf);
-	ssbuf xfbuf;
-	ss_bufinit(&xfbuf);
-	t( ss_bufensure(&xfbuf, &st_r.a, 1024) == 0 );
 	t( sd_commitpage(&b, &st_r.r, &buf) == 0 );
 	sdpageheader *h = (sdpageheader*)buf.s;
 	sdpage page;
 	sd_pageinit(&page, h);
 
 	svv *key;
-	sv *v;
+	char *v;
 	ssiter it;
 
 	/* i */
-	key = st_svv(&st_r.g, &st_r.gc, 0, 0, i);
+	key = st_svv(&st_r.g, &st_r.gc, 0, 0, i, 0, 0);
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_GTE, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_GTE, sv_vpointer(key));
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == i);
-	t( sv_flags(v) == 0);
-	t( sv_lsn(v) == 90);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == i);
+	t( sf_flags(st_r.r.scheme, v) == 0);
+	t( sf_lsn(st_r.r.scheme, v) == 90);
 	ss_iteratorclose(&it);
 
 	/* j */
-	key = st_svv(&st_r.g, &st_r.gc, 0, 0, j);
+	key = st_svv(&st_r.g, &st_r.gc, 0, 0, j, 0, 0);
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_GTE, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_GTE, sv_vpointer(key));
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == j);
-	t( sv_flags(v) == 0);
-	t( sv_lsn(v) == 80);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == j);
+	t( sf_flags(st_r.r.scheme, v) == 0);
+	t( sf_lsn(st_r.r.scheme, v) == 80);
 	ss_iteratorclose(&it);
 
 	/* k */
-	key = st_svv(&st_r.g, &st_r.gc, 0, 0, k);
+	key = st_svv(&st_r.g, &st_r.gc, 0, 0, k, 0, 0);
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_GTE, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_GTE, sv_vpointer(key));
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == k);
-	t( sv_flags(v) == 0);
-	t( sv_lsn(v) == 50);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == k);
+	t( sf_flags(st_r.r.scheme, v) == 0);
+	t( sf_lsn(st_r.r.scheme, v) == 50);
 	ss_iteratorclose(&it);
 
 	sd_buildfree(&b, &st_r.r);
 	ss_buffree(&buf, &st_r.a);
-	ss_buffree(&xfbuf, &st_r.a);
 }
 
 static void
@@ -1287,7 +1199,7 @@ sd_pageiter_gt_eq(void)
 {
 	sdbuild b;
 	sd_buildinit(&b);
-	t( sd_buildbegin(&b, &st_r.r, 1, 0, 0) == 0);
+	t( sd_buildbegin(&b, &st_r.r, 1, 0, NULL) == 0);
 
 	int i = 7;
 	int j = 8;
@@ -1299,33 +1211,30 @@ sd_pageiter_gt_eq(void)
 
 	ssbuf buf;
 	ss_bufinit(&buf);
-	ssbuf xfbuf;
-	ss_bufinit(&xfbuf);
-	t( ss_bufensure(&xfbuf, &st_r.a, 1024) == 0 );
 	t( sd_commitpage(&b, &st_r.r, &buf) == 0 );
 	sdpageheader *h = (sdpageheader*)buf.s;
 	sdpage page;
 	sd_pageinit(&page, h);
 
-	svv *key = st_svv(&st_r.g, &st_r.gc, 0, 0, i);
+	svv *key = st_svv(&st_r.g, &st_r.gc, 0, 0, i, 0, 0);
 	ssiter it;
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_GT, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_GT, sv_vpointer(key));
 	t( ss_iteratorhas(&it) != 0 );
-	sv *v = ss_iteratorof(&it);
+	char *v = ss_iteratorof(&it);
 	t( v != NULL);
-	t( *(int*)sv_key(v, &st_r.r, 0) == j);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == j);
 
-	key = st_svv(&st_r.g, &st_r.gc, 0, 0, j);
+	key = st_svv(&st_r.g, &st_r.gc, 0, 0, j, 0, 0);
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_GT, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_GT, sv_vpointer(key));
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == k);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == k);
 
-	key = st_svv(&st_r.g, &st_r.gc, 0, 0, k);
+	key = st_svv(&st_r.g, &st_r.gc, 0, 0, k, 0, 0);
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_GT, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_GT, sv_vpointer(key));
 	t( ss_iteratorhas(&it) == 0 );
 	v = ss_iteratorof(&it);
 	t( v == NULL );
@@ -1333,7 +1242,6 @@ sd_pageiter_gt_eq(void)
 
 	sd_buildfree(&b, &st_r.r);
 	ss_buffree(&buf, &st_r.a);
-	ss_buffree(&xfbuf, &st_r.a);
 }
 
 static void
@@ -1341,7 +1249,7 @@ sd_pageiter_gt_minmax(void)
 {
 	sdbuild b;
 	sd_buildinit(&b);
-	t( sd_buildbegin(&b, &st_r.r, 1, 0, 0) == 0);
+	t( sd_buildbegin(&b, &st_r.r, 1, 0, NULL) == 0);
 
 	int i = 7;
 	int j = 8;
@@ -1353,25 +1261,22 @@ sd_pageiter_gt_minmax(void)
 
 	ssbuf buf;
 	ss_bufinit(&buf);
-	ssbuf xfbuf;
-	ss_bufinit(&xfbuf);
-	t( ss_bufensure(&xfbuf, &st_r.a, 1024) == 0 );
 	t( sd_commitpage(&b, &st_r.r, &buf) == 0 );
 	sdpageheader *h = (sdpageheader*)buf.s;
 	sdpage page;
 	sd_pageinit(&page, h);
 
-	svv *key = st_svv(&st_r.g, &st_r.gc, 0, 0, 7);
+	svv *key = st_svv(&st_r.g, &st_r.gc, 0, 0, 7, 0, 0);
 	ssiter it;
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_GT, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_GT, sv_vpointer(key));
 	t( ss_iteratorhas(&it) != 0 );
-	sv *v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == j);
+	char *v = ss_iteratorof(&it);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == j);
 
-	key = st_svv(&st_r.g, &st_r.gc, 0, 0, 15);
+	key = st_svv(&st_r.g, &st_r.gc, 0, 0, 15, 0, 0);
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_GT, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_GT, sv_vpointer(key));
 	t( ss_iteratorhas(&it) == 0 );
 	v = ss_iteratorof(&it);
 	t( v == NULL );
@@ -1379,7 +1284,6 @@ sd_pageiter_gt_minmax(void)
 
 	sd_buildfree(&b, &st_r.r);
 	ss_buffree(&buf, &st_r.a);
-	ss_buffree(&xfbuf, &st_r.a);
 }
 
 static void
@@ -1387,7 +1291,7 @@ sd_pageiter_gt_mid(void)
 {
 	sdbuild b;
 	sd_buildinit(&b);
-	t( sd_buildbegin(&b, &st_r.r, 1, 0, 0) == 0);
+	t( sd_buildbegin(&b, &st_r.r, 1, 0, NULL) == 0);
 
 	int i = 7;
 	int j = 9;
@@ -1399,32 +1303,29 @@ sd_pageiter_gt_mid(void)
 
 	ssbuf buf;
 	ss_bufinit(&buf);
-	ssbuf xfbuf;
-	ss_bufinit(&xfbuf);
-	t( ss_bufensure(&xfbuf, &st_r.a, 1024) == 0 );
 	t( sd_commitpage(&b, &st_r.r, &buf) == 0 );
 	sdpageheader *h = (sdpageheader*)buf.s;
 	sdpage page;
 	sd_pageinit(&page, h);
 
-	svv *key = st_svv(&st_r.g, &st_r.gc, 0, 0, 8);
+	svv *key = st_svv(&st_r.g, &st_r.gc, 0, 0, 8, 0, 0);
 	ssiter it;
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_GT, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_GT, sv_vpointer(key));
 	t( ss_iteratorhas(&it) != 0 );
-	sv *v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == j);
+	char *v = ss_iteratorof(&it);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == j);
 
-	key = st_svv(&st_r.g, &st_r.gc, 0, 0, 10);
+	key = st_svv(&st_r.g, &st_r.gc, 0, 0, 10, 0, 0);
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_GT, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_GT, sv_vpointer(key));
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == k);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == k);
 
-	key = st_svv(&st_r.g, &st_r.gc, 0, 0, 555);
+	key = st_svv(&st_r.g, &st_r.gc, 0, 0, 555, 0, 0);
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_GT, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_GT, sv_vpointer(key));
 	t( ss_iteratorhas(&it) == 0 );
 	v = ss_iteratorof(&it);
 	t( v == NULL );
@@ -1432,7 +1333,6 @@ sd_pageiter_gt_mid(void)
 
 	sd_buildfree(&b, &st_r.r);
 	ss_buffree(&buf, &st_r.a);
-	ss_buffree(&xfbuf, &st_r.a);
 }
 
 static void
@@ -1440,7 +1340,7 @@ sd_pageiter_gt_iterate0(void)
 {
 	sdbuild b;
 	sd_buildinit(&b);
-	t( sd_buildbegin(&b, &st_r.r, 1, 0, 0) == 0);
+	t( sd_buildbegin(&b, &st_r.r, 1, 0, NULL) == 0);
 
 	int i = 7;
 	int j = 9;
@@ -1452,9 +1352,6 @@ sd_pageiter_gt_iterate0(void)
 
 	ssbuf buf;
 	ss_bufinit(&buf);
-	ssbuf xfbuf;
-	ss_bufinit(&xfbuf);
-	t( ss_bufensure(&xfbuf, &st_r.a, 1024) == 0 );
 	t( sd_commitpage(&b, &st_r.r, &buf) == 0 );
 	sdpageheader *h = (sdpageheader*)buf.s;
 	sdpage page;
@@ -1462,20 +1359,20 @@ sd_pageiter_gt_iterate0(void)
 
 	ssiter it;
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_GT, NULL, 0);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_GT, NULL);
 	t( ss_iteratorhas(&it) != 0 );
-	sv *v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == i);
+	char *v = ss_iteratorof(&it);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == i);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == j);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == j);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == k);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == k);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) == 0 );
@@ -1485,7 +1382,6 @@ sd_pageiter_gt_iterate0(void)
 
 	sd_buildfree(&b, &st_r.r);
 	ss_buffree(&buf, &st_r.a);
-	ss_buffree(&xfbuf, &st_r.a);
 }
 
 static void
@@ -1493,7 +1389,7 @@ sd_pageiter_gt_iterate1(void)
 {
 	sdbuild b;
 	sd_buildinit(&b);
-	t( sd_buildbegin(&b, &st_r.r, 1, 0, 0) == 0);
+	t( sd_buildbegin(&b, &st_r.r, 1, 0, NULL) == 0);
 
 	int i = 7;
 	int j = 9;
@@ -1505,26 +1401,23 @@ sd_pageiter_gt_iterate1(void)
 
 	ssbuf buf;
 	ss_bufinit(&buf);
-	ssbuf xfbuf;
-	ss_bufinit(&xfbuf);
-	t( ss_bufensure(&xfbuf, &st_r.a, 1024) == 0 );
 	t( sd_commitpage(&b, &st_r.r, &buf) == 0 );
 	sdpageheader *h = (sdpageheader*)buf.s;
 	sdpage page;
 	sd_pageinit(&page, h);
 
-	svv *key = st_svv(&st_r.g, &st_r.gc, 0, 0, i);
+	svv *key = st_svv(&st_r.g, &st_r.gc, 0, 0, i, 0, 0);
 	ssiter it;
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_GT, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_GT, sv_vpointer(key));
 	t( ss_iteratorhas(&it) != 0 );
-	sv *v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == j);
+	char *v = ss_iteratorof(&it);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == j);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == k);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == k);
 	ss_iteratornext(&it);
 
 	t( ss_iteratorhas(&it) == 0 );
@@ -1534,7 +1427,6 @@ sd_pageiter_gt_iterate1(void)
 
 	sd_buildfree(&b, &st_r.r);
 	ss_buffree(&buf, &st_r.a);
-	ss_buffree(&xfbuf, &st_r.a);
 }
 
 static void
@@ -1542,7 +1434,7 @@ sd_pageiter_gt_dup_mid(void)
 {
 	sdbuild b;
 	sd_buildinit(&b);
-	t( sd_buildbegin(&b, &st_r.r, 1, 0, 0) == 0);
+	t( sd_buildbegin(&b, &st_r.r, 1, 0, NULL) == 0);
 
 	int i = 7;
 	int j = 9;
@@ -1558,44 +1450,41 @@ sd_pageiter_gt_dup_mid(void)
 
 	ssbuf buf;
 	ss_bufinit(&buf);
-	ssbuf xfbuf;
-	ss_bufinit(&xfbuf);
-	t( ss_bufensure(&xfbuf, &st_r.a, 1024) == 0 );
 	t( sd_commitpage(&b, &st_r.r, &buf) == 0 );
 	sdpageheader *h = (sdpageheader*)buf.s;
 	sdpage page;
 	sd_pageinit(&page, h);
 
 	svv *key;
-	sv *v;
+	char *v;
 	ssiter it;
 
 	/* i */
-	key = st_svv(&st_r.g, &st_r.gc, 0, 0, i);
+	key = st_svv(&st_r.g, &st_r.gc, 0, 0, i, 0, 0);
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_GT, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_GT, sv_vpointer(key));
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == j);
-	t( sv_flags(v) == 0);
-	t( sv_lsn(v) == 80);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == j);
+	t( sf_flags(st_r.r.scheme, v) == 0);
+	t( sf_lsn(st_r.r.scheme, v) == 80);
 	ss_iteratorclose(&it);
 
 	/* j */
-	key = st_svv(&st_r.g, &st_r.gc, 0, 0, j);
+	key = st_svv(&st_r.g, &st_r.gc, 0, 0, j, 0, 0);
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_GT, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_GT, sv_vpointer(key));
 	t( ss_iteratorhas(&it) != 0 );
 	v = ss_iteratorof(&it);
-	t( *(int*)sv_key(v, &st_r.r, 0) == k);
-	t( sv_flags(v) == 0);
-	t( sv_lsn(v) == 50);
+	t( *(int*)sf_field(st_r.r.scheme, 0, v, &st_r.size) == k);
+	t( sf_flags(st_r.r.scheme, v) == 0);
+	t( sf_lsn(st_r.r.scheme, v) == 50);
 	ss_iteratorclose(&it);
 
 	/* k */
-	key = st_svv(&st_r.g, &st_r.gc, 0, 0, k);
+	key = st_svv(&st_r.g, &st_r.gc, 0, 0, k, 0, 0);
 	ss_iterinit(sd_pageiter, &it);
-	ss_iteropen(sd_pageiter, &it, &st_r.r, &xfbuf, &page, SS_GT, sv_vpointer(key), key->size);
+	ss_iteropen(sd_pageiter, &it, &st_r.r, &page, SS_GT, sv_vpointer(key));
 	t( ss_iteratorhas(&it) == 0 );
 	v = ss_iteratorof(&it);
 	t( v == NULL );
@@ -1603,7 +1492,6 @@ sd_pageiter_gt_dup_mid(void)
 
 	sd_buildfree(&b, &st_r.r);
 	ss_buffree(&buf, &st_r.a);
-	ss_buffree(&xfbuf, &st_r.a);
 }
 
 stgroup *sd_pageiter_group(void)

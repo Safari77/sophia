@@ -11,11 +11,12 @@ OPLATFORM = $(LIBSS_OBJECTS) \
             $(LIBSR_OBJECTS) \
             $(LIBSO_OBJECTS) \
             $(LIBSV_OBJECTS) \
-            $(LIBSL_OBJECTS) \
+            $(LIBSW_OBJECTS) \
             $(LIBSD_OBJECTS) \
             $(LIBSI_OBJECTS) \
             $(LIBSX_OBJECTS) \
             $(LIBSY_OBJECTS) \
+            $(LIBSC_OBJECTS) \
             $(LIBSE_OBJECTS) \
             $(SOPHIA_OBJECTS)
 O = $(OPLATFORM)
@@ -23,14 +24,11 @@ O = $(OPLATFORM)
 all: banner $(O)
 
 banner:
-	$(E) "SOPHIA v$(SOPHIA_VMAJOR).$(SOPHIA_VMINOR)"
-	$(E)
-	$(E) "cc: $(CC)"
-	$(E) "cflags: $(CFLAGS_OPT) $(CFLAGS_STRICT)"
+	$(E) "SOPHIA $(SOPHIA_VMAJOR).$(SOPHIA_VMINOR) (syntax-checker)"
 	$(E)
 
 .c.o:
-	$(E) "cc   $<"
+	$(E) "$(CC) $<"
 	$(Q) $(CC) $(CFLAGS_SOPHIA) -c $< -o $@
 
 # vim: syntax=make

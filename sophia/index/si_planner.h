@@ -12,59 +12,38 @@
 typedef struct siplanner siplanner;
 typedef struct siplan siplan;
 
+typedef enum {
+	SI_PNONE,
+	SI_PMATCH,
+	SI_PRETRY
+} siplannerrc;
+
 struct siplanner {
+	ssrq  memory;
 	void *i;
-	ssrq branch;
-	ssrq compact;
 };
 
 /* plan */
-#define SI_BRANCH        1
-#define SI_AGE           2
-#define SI_COMPACT       4
-#define SI_CHECKPOINT    8
-#define SI_GC            16
-#define SI_BACKUP        32
-#define SI_BACKUPEND     64
-#define SI_SHUTDOWN      128
-#define SI_DROP          256
-
-/* explain */
-#define SI_ENONE         0
-#define SI_ERETRY        1
-#define SI_EINDEX_SIZE   2
-#define SI_EINDEX_AGE    4
-#define SI_EBRANCH_COUNT 3
+#define SI_CHECKPOINT 1
+#define SI_COMPACTION 2
+#define SI_EXPIRE     4
+#define SI_GC         8
+#define SI_NODEGC     16
+#define SI_BACKUP     32
+#define SI_BACKUPEND  64
 
 struct siplan {
-	int explain;
 	int plan;
-	/* branch:
-	 *   a: index_size
-	 *   b: ttl
-	 *   c: ttl_wm
-	 * age:
-	 *   a: ttl
-	 *   b: ttl_wm
-	 *   c:
-	 * compact:
-	 *   a: branches
-	 *   b:
-	 *   c:
-	 * checkpoint:
-	 *   a: lsn
-	 *   b:
-	 *   c:
+	/* checkpoint:
+	 * compaction:
 	 * gc:
 	 *   a: lsn
 	 *   b: percent
-	 *   c:
+	 * expire:
+	 *   a: ttl
+	 * nodegc:
 	 * backup:
 	 *   a: bsn
-	 *   b:
-	 *   c:
-	 * shutdown:
-	 * drop:
 	 */
 	uint64_t a, b, c;
 	sinode *node;
@@ -73,9 +52,10 @@ struct siplan {
 int si_planinit(siplan*);
 int si_plannerinit(siplanner*, ssa*, void*);
 int si_plannerfree(siplanner*, ssa*);
-int si_plannertrace(siplan*, sstrace*);
-int si_plannerupdate(siplanner*, int, sinode*);
-int si_plannerremove(siplanner*, int, sinode*);
-int si_planner(siplanner*, siplan*);
+int si_plannertrace(siplan*, uint32_t, sstrace*);
+int si_plannerupdate(siplanner*, sinode*);
+int si_plannerremove(siplanner*, sinode*);
+siplannerrc
+si_planner(siplanner*, siplan*);
 
 #endif

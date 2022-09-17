@@ -58,8 +58,8 @@ int sd_schemecommit(sdscheme *c, sr *r)
 int sd_schemewrite(sdscheme *c, sr *r, char *path, int sync)
 {
 	ssfile meta;
-	ss_fileinit(&meta, r->a);
-	int rc = ss_filenew(&meta, path);
+	ss_fileinit(&meta, r->vfs);
+	int rc = ss_filenew(&meta, path, 0);
 	if (ssunlikely(rc == -1))
 		goto error;
 	rc = ss_filewrite(&meta, c->buf.s, ss_bufused(&c->buf));
@@ -70,6 +70,7 @@ int sd_schemewrite(sdscheme *c, sr *r, char *path, int sync)
 		if (ssunlikely(rc == -1))
 			goto error;
 	}
+	ss_fileadvise(&meta, 0, 0, meta.size);
 	rc = ss_fileclose(&meta);
 	if (ssunlikely(rc == -1))
 		goto error;
@@ -83,7 +84,7 @@ error:
 
 int sd_schemerecover(sdscheme *c, sr *r, char *path)
 {
-	ssize_t size = ss_filesize(path);
+	ssize_t size = ss_vfssize(r->vfs, path);
 	if (ssunlikely(size == -1))
 		goto error;
 	if (ssunlikely((unsigned int)size < sizeof(sdschemeheader))) {
@@ -94,8 +95,8 @@ int sd_schemerecover(sdscheme *c, sr *r, char *path)
 	if (ssunlikely(rc == -1))
 		return sr_oom(r->e);
 	ssfile meta;
-	ss_fileinit(&meta, r->a);
-	rc = ss_fileopen(&meta, path);
+	ss_fileinit(&meta, r->vfs);
+	rc = ss_fileopen(&meta, path, 0);
 	if (ssunlikely(rc == -1))
 		goto error;
 	rc = ss_filepread(&meta, 0, c->buf.s, size);

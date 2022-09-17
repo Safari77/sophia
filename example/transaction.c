@@ -24,24 +24,25 @@ int main(int argc, char *argv[])
 	 *
 	 * The only difference between crud.c is that
 	 * first argument to sp_set(), sp_get() and sp_delete() is
-	 * an transaction object (not database).
+	 * a transaction object (not database).
 	*/
 
 	/* open or create environment and database */
 	void *env = sp_env();
 	sp_setstring(env, "sophia.path", "_test", 0);
 	sp_setstring(env, "db", "test", 0);
-	void *db = sp_getobject(env, "db.test");
 	int rc = sp_open(env);
 	if (rc == -1)
 		goto error;
+
+	void *db = sp_getobject(env, "db.test");
 
 	/* begin transaction */
 	void *tx = sp_begin(env);
 
 	/* set */
 	uint32_t key = 1;
-	void *o = sp_object(db);
+	void *o = sp_document(db);
 	sp_setstring(o, "key", &key, sizeof(key));
 	sp_setstring(o, "value", &key, sizeof(key));
 	rc = sp_set(tx, o);
@@ -49,7 +50,7 @@ int main(int argc, char *argv[])
 		goto error;
 
 	/* get */
-	o = sp_object(db);
+	o = sp_document(db);
 	sp_setstring(o, "key", &key, sizeof(key));
 	o = sp_get(tx, o);
 	if (o) {
@@ -67,7 +68,7 @@ int main(int argc, char *argv[])
 	}
 
 	/* delete */
-	o = sp_object(db);
+	o = sp_document(db);
 	sp_setstring(o, "key", &key, sizeof(key));
 	rc = sp_delete(tx, o);
 	if (rc == -1)

@@ -10,80 +10,54 @@
 #include <libss.h>
 #include <libsf.h>
 #include <libsr.h>
+#include <libso.h>
 #include <libsv.h>
-#include <libsl.h>
+#include <libsw.h>
 #include <libsd.h>
 #include <libsi.h>
 
-void si_begin(sitx *t, si *index, uint64_t vlsn, uint64_t time,
-              svlog *l,
-              svlogindex *li)
+static inline int si_set(sitx *x, svv *v)
 {
-	t->index = index;
-	t->time  = time;
-	t->vlsn  = vlsn;
-	t->l     = l;
-	t->li    = li;
-	ss_listinit(&t->nodelist);
-	si_lock(index);
-}
-
-void si_commit(sitx *t)
-{
-	/* reschedule nodes */
-	sslist *i, *n;
-	ss_listforeach_safe(&t->nodelist, i, n) {
-		sinode *node = sscast(i, sinode, commit);
-		ss_listinit(&node->commit);
-		si_plannerupdate(&t->index->p, SI_BRANCH, node);
-	}
-	si_unlock(t->index);
-}
-
-static inline int
-si_set(sitx *t, svv *v)
-{
-	si *index = t->index;
-	t->index->update_time = t->time;
+	si *index = x->index;
 	/* match node */
 	ssiter i;
 	ss_iterinit(si_iter, &i);
-	ss_iteropen(si_iter, &i, t->index->r, index, SS_GTE,
-	            sv_vpointer(v), v->size);
+	ss_iteropen(si_iter, &i, &index->r, index, SS_GTE,
+	            sv_vpointer(v));
 	sinode *node = ss_iterof(si_iter, &i);
 	assert(node != NULL);
 	/* insert into node index */
 	svindex *vindex = si_nodeindex(node);
 	svindexpos pos;
-	sv_indexget(vindex, t->index->r, &pos, v);
-	sv_indexupdate(vindex, &pos, v);
+	sv_indexget(vindex, &index->r, &pos, v);
+	sv_indexupdate(vindex, &index->r, &pos, v);
 	/* update node */
-	node->update_time = index->update_time;
-	node->used += sv_vsize(v);
-	if (ss_listempty(&node->commit))
-		ss_listappend(&t->nodelist, &node->commit);
+	node->used += sv_vsize(v, &index->r);
+	si_txtrack(x, node);
 	return 0;
 }
 
-void si_write(sitx *t, int check)
+void si_write(sitx *x, svlog *l, svlogindex *li, int recover)
 {
-	sr *r = t->index->r;
-	svlogv *cv = sv_logat(t->l, t->li->head);
-	int c = t->li->count;
+	sr *r = &x->index->r;
+	svlogv *cv = sv_logat(l, li->head);
+	int c = li->count;
 	while (c) {
-		svv *v = cv->v.v;
-		if (check && si_querycommited(t->index, r, &cv->v)) {
-			uint32_t gc = si_gcv(r->a, v);
-			ss_quota(r->quota, SS_QREMOVE, gc);
+		svv *v = cv->v;
+		if (recover) {
+			if (si_readcommited(x->index, r, v)) {
+				si_gcv(r, v);
+				goto next;
+			}
+		}
+		if (sv_vflags(v, r) & SVGET) {
+			assert(v->log == NULL);
+			sv_vunref(r, v);
 			goto next;
 		}
-		if (v->flags & SVGET) {
-			sv_vfree(r->a, v);
-			goto next;
-		}
-		si_set(t, v);
+		si_set(x, v);
 next:
-		cv = sv_logat(t->l, cv->next);
+		cv = sv_logat(l, cv->next);
 		c--;
 	}
 	return;

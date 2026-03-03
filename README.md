@@ -36,7 +36,13 @@ in time. It has guaranteed *O(1)* worst case complexity for read, write and rang
 * Carefully tested
 * Open Source Software, BSD
 
-The project is no longer supported, but it is still interesting in terms of the storage engine design evolution and architectural choices.
+---
+
+The project is no longer developed, but it is still interesting in terms of the modern storage engine design evolution and architectural choices.
+
+Storage engines of [Amelia](https://amelielabs.io) and [Monotone](https://monotone.studio) are heavily inspired by Sophia.
+
+---
 
 Version 1.1 (first design approach)
 -----------
